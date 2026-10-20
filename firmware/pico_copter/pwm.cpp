@@ -18,6 +18,7 @@
 #include "dshot_protocol.hpp"
 #include "esc_serial_uart.hpp"
 #include "dshot_bidir_decode.hpp"
+#include "esc_dshot_presence.hpp"
 #include "dshot_tx.pio.h"
 #include "dshot_oneway.pio.h"
 #include "hardware/pio.h"
@@ -42,7 +43,7 @@ constexpr uint MOTOR_PINS[MOTOR_COUNT] = {
 // At default DShot300: 12 MHz PIO, 40 cycles/bit, 300 delay cycles.
 constexpr uint32_t PIO_CYCLES_PER_BIT = dshot::kPioCyclesPerBit;
 constexpr uint32_t RX_TURNAROUND_CYCLES = dshot::kTurnaroundCycles;
-constexpr uint32_t ERPM_STALE_US = 250000; // Telemetry display only.
+// Presence is determined by successful recent GCR/CRC eRPM decoding.
 static_assert(RX_TURNAROUND_CYCLES ==
               dshot::kTurnaroundUs * dshot::kPioClockHz / 1000000u,
               "Wrong configurable DShot turnaround");
@@ -211,7 +212,10 @@ void start_next_exchange() {
             continue;
         }
         const uint16_t throttle = dshot::throttle_from_legacy_duty(requested_duty[i]);
-        const bool serial_request = esc_serial::request_dshot_telemetry(i, throttle, now_us);
+        const bool connected = esc_dshot_presence::connected(
+            telemetry[i].rx_ok, telemetry[i].last_good_us, now_us);
+        const bool serial_request = esc_serial::request_dshot_telemetry(
+            i, throttle, connected, now_us);
         pio_sm_put(dshot_pio, sm, dshot::bidirectional_pio_word(throttle, serial_request));
         pio_sm_put(dshot_pio, sm, RX_TURNAROUND_CYCLES);
         ++telemetry[i].tx;
@@ -228,11 +232,12 @@ void start_next_exchange() {
         }
         const uint16_t throttle =
             dshot::throttle_from_legacy_duty(requested_duty[i]);
-        const bool serial_request = esc_serial::request_dshot_telemetry(i, throttle, now_us);
-        pio_sm_put(dshot_pio, sm, dshot::pio_word(throttle, serial_request));
+        // Single-direction mode cannot verify whether an ESC is present.
+        // Keep ordinary DShot commands, but do not request TX telemetry.
+        pio_sm_put(dshot_pio, sm, dshot::pio_word(throttle));
         ++telemetry[i].tx;
         telemetry[i].last_command = throttle;
-        telemetry[i].last_frame = dshot::frame(throttle, serial_request);
+        telemetry[i].last_frame = dshot::frame(throttle);
         motor_sent[i] = false;
 #endif
     }
@@ -272,8 +277,8 @@ DShotTelemetrySnapshot dshot_telemetry_snapshot(void) {
         dest.last_command = s.last_command;
         dest.last_frame = s.last_frame;
 #if DSHOT_BIDIRECTIONAL
-        dest.fresh = s.rx_ok != 0 &&
-                     static_cast<uint32_t>(now_us - s.last_good_us) <= ERPM_STALE_US;
+        dest.fresh = esc_dshot_presence::connected(
+            s.rx_ok, s.last_good_us, now_us);
 #else
         dest.fresh = false; // No ESC eRPM feedback in one-way mode.
 #endif

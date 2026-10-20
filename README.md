@@ -2,11 +2,20 @@
 
 This repository branches from `temesotejam/pico-copter-fc` and adds
 **BLHeli_32 ESC dedicated TX-pad telemetry** to GPIO5 (UART1 RX), separate
-from the existing DShot motor controls. Data are shown on USB as
+from the existing DShot motor controls. This RP2040 build selects
+**bidirectional DShot300**, automatically recognizes each ESC from a
+recent, checksum-valid eRPM reply on the corresponding motor GPIO, and
+requests separate TX-pad data **only from recognized ESCs**. All four DShot
+motor outputs remain active, whether an ESC is recognized or not.
+Data are shown on USB as
 `#ESC_UART`: temperature, voltage, current, mAh, and electrical RPM per ESC.
 
 **See [wiring, voltage limits and no-propeller test procedure](firmware/pico_copter/ESC_SERIAL_TELEMETRY.md).**
-The new serial feedback is diagnostic only. Hardware reception from the
+The new serial feedback is diagnostic only. The connected status is
+based on DShot replies, not stray UART bytes, and expires after 250 ms
+without valid eRPM. UART telemetry is not requested while the corresponding
+DShot channel is unrecognized or commanded to stop.
+Hardware reception from the
 specific MAD ESC TX pad has not yet been validated; this is not a
 flight-tested firmware release. Original motor mixer, PID/EKF, SBUS failsafe,
 and 38-column CH5 logger remain unchanged.

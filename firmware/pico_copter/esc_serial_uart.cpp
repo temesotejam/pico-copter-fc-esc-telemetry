@@ -94,13 +94,16 @@ void service_400hz(uint32_t now_us) {
     }
 }
 
-bool request_dshot_telemetry(uint8_t motor_index, uint16_t throttle, uint32_t now_us) {
+bool request_dshot_telemetry(uint8_t motor_index, uint16_t throttle,
+                             bool dshot_connected, uint32_t now_us) {
     if (!kEnabled || !initialized || motor_index >= 4 || pending ||
         motor_index != next_motor ||
         static_cast<uint32_t>(now_us - last_request_us) < kRequestSpacingUs)
         return false;
-    if (throttle == 0) {
-        // Stopped ESCs may not answer; don't stall telemetry from other motors.
+    // Rotate past absent ESCs, or stopped motors, without scheduling a UART
+    // response. An ESC becomes eligible only after a fresh, CRC-valid eRPM
+    // response has been received on its bidirectional DShot GPIO.
+    if (!dshot_connected || throttle == 0) {
         next_motor = static_cast<uint8_t>((next_motor + 1) % 4);
         return false;
     }

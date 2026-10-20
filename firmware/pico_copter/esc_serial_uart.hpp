@@ -5,6 +5,8 @@
 #include "esc_serial_protocol.hpp"
 
 // Dedicated ESC TX telemetry is separate from bidirectional DShot/eRPM.
+// This branch only requests serial telemetry from ESCs with a fresh,
+// checksum-valid bidirectional DShot reply on their own motor signal pin.
 // Read only: it must never control motors, arming, PID, EKF or the failsafe.
 namespace esc_serial {
 constexpr bool kEnabled = true;  // Set false to disable ESC TX/UART telemetry.
@@ -34,9 +36,11 @@ struct Snapshot {
 void init();
 // Called from the 400Hz core0 PWM IRQ, never blocks or waits for the ESC.
 void service_400hz(uint32_t now_us);
-// True exactly once per scheduled serial telemetry request. Call only after
-// the matching DShot TX has capacity; never request on a stopped motor.
-bool request_dshot_telemetry(uint8_t motor_index, uint16_t throttle, uint32_t now_us);
+// True only for an online ESC: a recent, checksum-valid reply on its DShot
+// input channel is required. Called after verifying DShot TX FIFO capacity.
+// Nonresponding ESCs are never queried via UART; motor control is unchanged.
+bool request_dshot_telemetry(uint8_t motor_index, uint16_t throttle,
+                             bool dshot_connected, uint32_t now_us);
 // Called only from core0's background USB diagnostic thread.
 Snapshot snapshot();
 }  // namespace esc_serial

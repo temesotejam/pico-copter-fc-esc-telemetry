@@ -25,11 +25,22 @@ failsafe. It **does not** use serial telemetry for feedback or motor stopping.
 
 ## Acquisition and output
 
-While motors are running, each ESC is requested in order FR, FL, RR, RL.
-One DShot throttle frame per request sets its telemetry request bit, while
-preserving the commanded throttle; other motors get normal DShot frames.
-The request rotates every 40 ms (25 responses/s maximum total, about 6.25 Hz
-per motor). UART1 at 115200 bps, 8N1 receives the 10-byte KISS/BLHeli_32
+The standard build now uses **bidirectional DShot300** on the motor-control
+lines. Its PIO RX path returns eRPM on the *same* DShot signal wire.
+A channel is considered **connected** only after a GCR+checksum-valid eRPM
+response (even eRPM=0 is valid). Its connected state expires if another
+valid eRPM response is not seen within **250 ms**. CRC errors, GCR errors,
+missing replies, UART garbage, and command transmission by themselves do
+not mark a channel as connected.
+
+Only **connected motors with a nonzero throttle command** are selected for
+TX-pad telemetry requests, in FR, FL, RR, RL rotation. Disconnected motors
+still receive their original control/STOP commands at 400 Hz, and SBUS
+failsafe behavior is unaffected. A serial telemetry request uses the DShot
+telemetry request bit while preserving that motor's throttle command.
+The next request can occur no sooner than 40 ms after the previous one
+(25 responses/s maximum total). One connected ESC can be queried at up to
+roughly 25 Hz; four connected ESCs roughly 6.25 Hz each. UART1 at 115200 bps, 8N1 receives the 10-byte KISS/BLHeli_32
 serial reply, checks CRC8 (poly 0x07), and stores:
 
 - Temperature in °C
@@ -43,7 +54,8 @@ time out in 8 ms; loss of ESC telemetry does **not** inhibit motor output.
 Data older than 500 ms is marked invalid and excluded from current totals.
 
 Enable/disable: set `esc_serial::kEnabled` in `esc_serial_uart.hpp`.
-USB reports `#ESC_UART FR/FL/RR/RL ...` and a `#ESC_UART SUM` line.
+USB reports `#DShot300 FR/FL/RR/RL ... connected=0/1`,
+`#ESC_UART FR/FL/RR/RL detected=0/1 ...`, and a `#ESC_UART SUM` line.
 `valid=0` means no fresh data; it is **not** a zero measurement.
 An unpowered ESC or a nonresponding/unsupported TX terminal produces
 timeouts/invalid telemetry rather than a change to flight-control output.
@@ -56,10 +68,16 @@ calibrated. Consumption is each ESC's own cumulative mAh (not watts).
 
 1. Remove propellers; first connect just one verified-level TX terminal.
 2. Build and flash the Pico UF2, verify original DShot motor operation.
-3. Gently run the connected motor and inspect `#ESC_UART` on USB.
-4. Confirm `requests` increments, `received` increments, and `valid=1`.
-   No response: inspect TX wiring, UART voltage, ESC telemetry firmware,
-   and `timeouts/crc` without altering control logic.
+3. Check `#DShot300 <motor> mode=bidir connected=1 valid=1` first.
+   An unplugged ESC must remain `connected=0`. A recognized ESC with
+   fresh reply should show eRPM even if its motor is not spinning yet.
+4. Gently run the connected motor. Check `#ESC_UART <motor> detected=1`;
+   then verify `requests`, `rx`, and `valid=1`. The other three ESCs,
+   if not connected, should continue to show `requests=0`.
+   If bidirectional DShot never reaches `connected=1`, check signal
+   wiring/levels and ESC bidirectional support *before* diagnosing UART.
+   If DShot is detected but UART fails, inspect TX wiring, voltage and
+   `timeout/crc/stray` counters.
 5. Only after successful one-ESC operation, verify electrical compatibility
    and connect multiple ESC TX lines. Test each individually and then in
    combination, checking mapping, current, and temperature.
@@ -67,4 +85,6 @@ calibrated. Consumption is each ESC's own cumulative mAh (not watts).
 
 Sources: BLHeli_32 KISS telemetry framing (Betaflight esc_sensor.c),
 Betaflight's DShot ESC telemetry documentation, and the MAD product
-specification. Hardware behavior of this exact ESC TX pad must be validated.
+specification. Hardware behavior of this exact ESC TX pad must be validated. Current output
+logs from the earlier one-way firmware showed no successful UART packets,
+so no hardware success is claimed for this new bidirectional revision.

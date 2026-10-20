@@ -17,12 +17,12 @@
 #endif
 
 // Manually selected protocol. NO runtime auto-switching.
-//   1 = bidirectional DShot (inverted TX/CRC, ESC eRPM reply; prior tested mode)
-//   0 = standard one-way DShot (normal TX/CRC, NO eRPM reply; selected)
+//   1 = bidirectional DShot (inverted TX/CRC, ESC eRPM reply; selected)
+//   0 = standard one-way DShot (normal TX/CRC, NO eRPM reply)
 // To change: edit just this value, rebuild, and flash the resulting UF2.
 // Alternatively pass -DDSHOT_BIDIRECTIONAL=0/1 to CMake.
 #ifndef DSHOT_BIDIRECTIONAL
-#define DSHOT_BIDIRECTIONAL 0
+#define DSHOT_BIDIRECTIONAL 1
 #endif
 
 static_assert(DSHOT_BIDIRECTIONAL == 0 || DSHOT_BIDIRECTIONAL == 1,

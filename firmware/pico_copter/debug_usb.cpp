@@ -175,7 +175,7 @@ void poll() {
                 ? static_cast<uint32_t>((static_cast<uint64_t>(m.rx_ok) * 100u) / m.tx)
                 : 0u;
             printf("#DShot%lu %s mode=%s duty=%.3f cmd=%u pkt=0x%04x "
-                   "eRPM=%ld valid=%u rx=%lu/%lu (%lu%%) "
+                   "eRPM=%ld valid=%u connected=%u rx=%lu/%lu (%lu%%) "
                    "timeout=%lu gcr=%lu crc=%lu other=%lu stray=%lu busy=%lu\n",
                    static_cast<unsigned long>(dshot::kRateKbps),
                    names[i], dshot::kBidirectional ? "bidir" : "oneway",
@@ -183,6 +183,7 @@ void poll() {
                    static_cast<unsigned int>(m.last_command),
                    static_cast<unsigned int>(m.last_frame),
                    m.fresh ? static_cast<long>(m.erpm) : -1L,
+                   m.fresh ? 1u : 0u,
                    m.fresh ? 1u : 0u,
                    static_cast<unsigned long>(m.rx_ok),
                    static_cast<unsigned long>(m.tx),
@@ -198,6 +199,7 @@ void poll() {
 
     if (kEnableEscSerial) {
         const esc_serial::Snapshot esc = esc_serial::snapshot();
+        const DShotTelemetrySnapshot link = dshot_telemetry_snapshot();
         const char* names[4] = {"FR", "FL", "RR", "RL"};
         double total_current_a = 0.0;
         unsigned fresh_count = 0;
@@ -208,10 +210,11 @@ void poll() {
                 ++fresh_count;
             }
             // Never present stale measurements as valid.
-            printf("#ESC_UART %s valid=%u temp_c=%ld voltage_v=%.2f "
+            printf("#ESC_UART %s detected=%u valid=%u temp_c=%ld voltage_v=%.2f "
                    "current_a=%.2f consumed_mah=%ld erpm=%ld "
                    "age_ms=%ld requests=%lu rx=%lu crc=%lu timeout=%lu\n",
-                   names[i], m.fresh ? 1u : 0u,
+                   names[i], link.motors[i].fresh ? 1u : 0u,
+                   m.fresh ? 1u : 0u,
                    m.fresh ? static_cast<long>(m.reading.temperature_c) : -1L,
                    m.fresh ? m.reading.voltage_centivolt / 100.0 : -1.0,
                    m.fresh ? m.reading.current_centiamp / 100.0 : -1.0,

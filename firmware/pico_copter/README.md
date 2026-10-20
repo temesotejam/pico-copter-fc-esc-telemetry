@@ -1,8 +1,12 @@
 # Pico Copter firmware (BLHeli_32 serial TX telemetry variant)
 
-This branch adds a separate ESC TX-pad 115200 baud receive path at
-**GPIO5/UART1 RX**. When a motor runs, each ESC is requested in turn using
-the DShot telemetry bit. New `#ESC_UART` USB diagnostics report voltage,
+This branch defaults to **bidirectional DShot300**. It detects a connected
+ESC only after a valid eRPM reply on that specific motor DShot GPIO,
+and removes the detected status after 250 ms without valid replies.
+It adds a separate ESC TX-pad 115200 baud receive path at
+**GPIO5/UART1 RX**. When a detected motor runs, serial telemetry is
+requested using the DShot telemetry bit. Unconnected channels are skipped
+for UART requests, but their DShot control commands are still sent. New `#ESC_UART` USB diagnostics report voltage,
 current, consumption, temperature and electrical RPM with CRC and age.
 Read [ESC_SERIAL_TELEMETRY.md](ESC_SERIAL_TELEMETRY.md) before wiring.
 The 38-field CH5 flight log and all original motor/RC control are untouched.
@@ -107,7 +111,7 @@ cmake --build build --parallel
 実際のファイルではいずれも`#ifndef`ガード内に記載されています。**値を変更して再ビルド・書込みすると切り替わります。実行中の自動切換えはありません。**
 
 - **双方向（1、デフォルト）**：`dshot_tx.pio`を使用。反転波形・反転CRC、同じGPIOでESC返信を受信しeRPMを復号。返信が欠けても指令を継続します。今回の改修でも、以前eRPM取得に成功した双方向PIOの命令列は維持しています。
-- **単方向（0）**：`dshot_oneway.pio`を使用。非反転波形・通常CRC、送信だけ行い、eRPMは取得しません。USB診断は`mode=oneway`、`valid=0`、`eRPM=-1`となります。
+- **単方向（0）**：`dshot_oneway.pio`を使用。非反転波形・通常CRC、送信だけ行い、eRPMは取得しません。USB診断は`mode=oneway`、`valid=0`、`eRPM=-1`となります。この派生版では、DShot応答による接続確認ができないため、単方向設定時は専用TXテレメトリ要求も無効になります。
 
 両モードともモータ出力は400 Hzで更新し、既存のスロットル変換・PID・EKF・SBUSフェイルセーフ・CH5ログは共通です。CMakeの`-DDSHOT_BIDIRECTIONAL=0/1`と`-DDSHOT_RATE_KBPS=150/300/600/1200`による一時的な上書きも可能です。
 

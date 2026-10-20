@@ -32,7 +32,7 @@ if(NOT DSHOT_RATE_KBPS STREQUAL "" AND
 endif()
 
 # Fixed one-way or bidirectional firmware mode (NO runtime auto-switch).
-# Empty uses dshot_config.hpp (default = bidirectional).
+# Empty uses dshot_config.hpp (this branch defaults to bidirectional).
 set(DSHOT_BIDIRECTIONAL "" CACHE STRING "Override DShot mode: 1=bidir, 0=one-way; empty=header default")
 if(NOT DSHOT_BIDIRECTIONAL STREQUAL "" AND
    NOT DSHOT_BIDIRECTIONAL MATCHES "^[01]$")
