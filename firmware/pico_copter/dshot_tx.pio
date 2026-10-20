@@ -1,0 +1,49 @@
+; Bidirectional DShot300 TX / eRPM RX, RP2040 direct ESC GPIO.
+; Adapted from pio-dshot (MIT)
+; Copyright (c) 2023 Simon Wunderlich.
+; Reference: https://github.com/simonwunderlich/pio-dshot
+; The pin is idle HIGH; outgoing DShot is inverted, and so is the CRC nibble.
+; Clock is 40 PIO cycles per TX bit (DShot300 => 12 MHz PIO clock).
+.program dshot_tx
+.wrap_target
+    set pindirs, 1
+    pull
+    set x, 15
+tx_loop:
+    set pins, 0 [14]
+    out pins, 1 [14]
+    set pins, 1 [8]
+    jmp x-- tx_loop
+
+    ; Fixed turnaround delay (~25 microseconds) sent by host.
+    pull
+    mov x, osr
+after_tx:
+    jmp x-- after_tx
+
+    ; Release the pin and capture 21 NRZI telemetry bits.
+    set pindirs, 0
+    ; The original 31-count polling window was only about 8 us.
+    ; Allow ~43 us at 12 MHz so a slightly late ESC reply is not
+    ; driven against the Pico output as soon as the timeout expires.
+    set y, 7
+wait_rx_outer:
+    set x, 31
+wait_rx:
+    jmp pin rx_still_high
+    jmp start_rx
+rx_still_high:
+    jmp x-- wait_rx
+    jmp y-- wait_rx_outer
+    jmp finish_rx
+start_rx:
+    set x, 20 [8]
+rx_loop:
+    in pins, 1 [30]
+    jmp x-- rx_loop
+finish_rx:
+    ; Hold the pin released briefly after the last response sample.
+    push [12]
+    set pindirs, 1
+    set pins, 1 [2]
+.wrap

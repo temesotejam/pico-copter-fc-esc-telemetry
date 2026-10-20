@@ -1,0 +1,525 @@
+name: Build Pico Copter FC UF2 and deploy Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "firmware/pico_copter/**"
+      - "web/**"
+      - ".github/workflows/build-and-deploy.yml"
+      - "README.md"
+  pull_request:
+    paths:
+      - "firmware/pico_copter/**"
+      - ".github/workflows/build-and-deploy.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pico-copter-pages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PICO_SDK_REF: 2.3.0
+  EIGEN_VERSION: 3.4.0
+  EIGEN_REF: 3147391d946bb4b6c68edd901f2add6ac1f31f8c
+  CCACHE_MAXSIZE: 500M
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Restore Pico SDK cache
+        id: pico-sdk-cache
+        uses: actions/cache@v4
+        with:
+          path: pico-sdk
+          key: pico-sdk-${{ runner.os }}-${{ env.PICO_SDK_REF }}
+
+      - name: Checkout Pico SDK on cache miss
+        if: steps.pico-sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: raspberrypi/pico-sdk
+          ref: ${{ env.PICO_SDK_REF }}
+          path: pico-sdk
+          submodules: recursive
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Disable push to Pico SDK remote
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git -C pico-sdk remote set-url --push origin DISABLED
+          git -C pico-sdk remote -v
+
+      - name: Restore Eigen cache
+        id: eigen-cache
+        uses: actions/cache@v4
+        with:
+          path: third_party/eigen
+          key: eigen-${{ runner.os }}-${{ env.EIGEN_REF }}
+
+      - name: Checkout Eigen 3.4.0 on cache miss
+        if: steps.eigen-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf third_party/eigen
+          mkdir -p third_party
+          git clone \
+            --branch "${EIGEN_VERSION}" \
+            --depth 1 \
+            https://gitlab.com/libeigen/eigen.git \
+            third_party/eigen
+          test "$(git -C third_party/eigen rev-parse HEAD)" = "${EIGEN_REF}"
+          rm -rf third_party/eigen/.git
+
+      - name: Verify Eigen dependency
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f third_party/eigen/Eigen/Dense
+          grep -q "#define EIGEN_WORLD_VERSION 3" \
+            third_party/eigen/Eigen/src/Core/util/Macros.h
+          grep -q "#define EIGEN_MAJOR_VERSION 4" \
+            third_party/eigen/Eigen/src/Core/util/Macros.h
+          grep -q "#define EIGEN_MINOR_VERSION 0" \
+            third_party/eigen/Eigen/src/Core/util/Macros.h
+
+      - name: Install ARM toolchain and ccache
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install --yes --no-install-recommends \
+            ccache \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib \
+            ninja-build
+
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: >-
+            ccache-${{ runner.os }}-pico-${{ env.PICO_SDK_REF }}-${{ env.EIGEN_REF }}-${{ hashFiles('firmware/pico_copter/**') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-pico-${{ env.PICO_SDK_REF }}-${{ env.EIGEN_REF }}-
+
+      - name: Configure ccache
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "PICO_SDK_PATH=${GITHUB_WORKSPACE}/pico-sdk" >> "${GITHUB_ENV}"
+          echo "EIGEN3_INCLUDE_DIR=${GITHUB_WORKSPACE}/third_party/eigen" >> "${GITHUB_ENV}"
+          echo "CCACHE_DIR=${GITHUB_WORKSPACE}/.ccache" >> "${GITHUB_ENV}"
+          echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}" >> "${GITHUB_ENV}"
+          echo "CCACHE_NOHASHDIR=true" >> "${GITHUB_ENV}"
+          echo "CCACHE_COMPILERCHECK=content" >> "${GITHUB_ENV}"
+          mkdir -p "${GITHUB_WORKSPACE}/.ccache"
+          CCACHE_DIR="${GITHUB_WORKSPACE}/.ccache" \
+            ccache --set-config=max_size="${CCACHE_MAXSIZE}"
+          CCACHE_DIR="${GITHUB_WORKSPACE}/.ccache" \
+            ccache --set-config=compression=true
+          CCACHE_DIR="${GITHUB_WORKSPACE}/.ccache" ccache --zero-stats
+
+      - name: Test SBUS parser and link recovery
+        shell: bash
+        run: |
+          set -euxo pipefail
+          g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
+            firmware/pico_copter/tests/test_sbus.cpp -o /tmp/sbus-test
+          /tmp/sbus-test
+          g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
+            firmware/pico_copter/tests/test_flight_log_ring.cpp -o /tmp/flight-log-test
+          /tmp/flight-log-test
+          g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
+            firmware/pico_copter/tests/test_ch5_capture.cpp -o /tmp/ch5-capture-test
+          /tmp/ch5-capture-test
+          g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
+            firmware/pico_copter/tests/test_dshot.cpp -o /tmp/dshot-test
+          /tmp/dshot-test
+          g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
+            firmware/pico_copter/tests/test_dshot_bidir.cpp -o /tmp/dshot-bidir-test
+          /tmp/dshot-bidir-test
+          g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
+            firmware/pico_copter/tests/test_motor_mix_scaling.cpp -o /tmp/motor-mix-test
+          /tmp/motor-mix-test
+          # Check standard/inverted CRC and telemetry decoder for both
+          # manually selected modes at all supported link rates.
+          for rate in 150 300 600 1200; do
+            for mode in 0 1; do
+              g++ -std=c++17 -Wall -Wextra -Werror \
+                -DDSHOT_RATE_KBPS="$rate" -DDSHOT_BIDIRECTIONAL="$mode" \
+                -I firmware/pico_copter \
+                firmware/pico_copter/tests/test_dshot.cpp -o /tmp/dshot-speed-test
+              /tmp/dshot-speed-test
+              g++ -std=c++17 -Wall -Wextra -Werror \
+                -DDSHOT_RATE_KBPS="$rate" -DDSHOT_BIDIRECTIONAL="$mode" \
+                -I firmware/pico_copter \
+                firmware/pico_copter/tests/test_dshot_bidir.cpp -o /tmp/dshot-bidir-speed-test
+              /tmp/dshot-bidir-speed-test
+            done
+          done
+
+      - name: Configure Pico Copter
+        shell: bash
+        run: |
+          set -o pipefail
+          cmake \
+            -S firmware/pico_copter \
+            -B build \
+            -G Ninja \
+            -DPICO_SDK_PATH="${PICO_SDK_PATH}" \
+            -DEIGEN3_INCLUDE_DIR="${EIGEN3_INCLUDE_DIR}" \
+            -DPICO_BOARD=pico \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            2>&1 | tee configure.log
+
+      - name: Build Pico Copter UF2
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            cmake --build build \
+              --target pico_copter \
+              --parallel "$(nproc)"
+            test -s build/pico_copter.uf2
+            echo
+            echo "=== ccache statistics ==="
+            ccache --show-stats
+          } 2>&1 | tee build.log
+
+      - name: Configure Pico 2 Copter
+        shell: bash
+        run: |
+          set -o pipefail
+          cmake \
+            -S firmware/pico_copter \
+            -B build-pico2 \
+            -G Ninja \
+            -DPICO_SDK_PATH="${PICO_SDK_PATH}" \
+            -DEIGEN3_INCLUDE_DIR="${EIGEN3_INCLUDE_DIR}" \
+            -DPICO_BOARD=pico2 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            2>&1 | tee configure-pico2.log
+
+      - name: Build Pico 2 Copter UF2
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            cmake --build build-pico2 \
+              --target pico_copter \
+              --parallel "$(nproc)"
+            test -s build-pico2/pico_copter.uf2
+          } 2>&1 | tee build-pico2.log
+
+      - name: Verify opposite DShot mode compiles for Pico
+        shell: bash
+        run: |
+          set -euxo pipefail
+          selected_mode="$(awk '/^#define DSHOT_BIDIRECTIONAL [01]$/ {print $3}' firmware/pico_copter/dshot_config.hpp)"
+          test "$selected_mode" = "0" || test "$selected_mode" = "1"
+          other_mode="$((1-selected_mode))"
+          cmake -S firmware/pico_copter -B build-opposite -G Ninja \
+            -DPICO_SDK_PATH="${PICO_SDK_PATH}" \
+            -DEIGEN3_INCLUDE_DIR="${EIGEN3_INCLUDE_DIR}" \
+            -DPICO_BOARD=pico -DDSHOT_BIDIRECTIONAL="$other_mode" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            2>&1 | tee configure-opposite.log
+          cmake --build build-opposite --target pico_copter --parallel "$(nproc)" \
+            2>&1 | tee build-opposite.log
+          test -s build-opposite/pico_copter.uf2
+
+      - name: Create and independently build portable flight source ZIP
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          import zipfile
+
+          source = Path("firmware/pico_copter")
+          stage = Path("portable-export/pico_copter")
+          shutil.rmtree(stage.parent, ignore_errors=True)
+          stage.mkdir(parents=True)
+
+          # Root project source, all required headers, PIO and build config.
+          # Exclude repository web/Actions, historical files, host tests and
+          # all firmware build outputs. No Git repository is needed to build.
+          permitted = {".cpp", ".hpp", ".c", ".h", ".pio"}
+          fixed = {"CMakeLists.txt", "README.md", "DSHOT_UPSTREAM_LICENSE.txt"}
+          copied = []
+          for item in sorted(source.iterdir()):
+              if item.is_file() and (item.suffix in permitted or item.name in fixed):
+                  shutil.copy2(item, stage / item.name)
+                  copied.append(item.name)
+          for required in ("CMakeLists.txt", "pico_copter.cpp", "pwm.cpp",
+                           "dshot_config.hpp", "dshot_oneway.pio", "dshot_tx.pio",
+                           "DSHOT_UPSTREAM_LICENSE.txt"):
+              assert required in copied, f"Missing portable flight source: {required}"
+
+          # Eigen is header-only. Bundle the SAME pinned, CI-verified headers
+          # used to build the released UF2 so editing gains needs no download.
+          eigen_source = Path("third_party/eigen")
+          eigen_target = stage / "third_party/eigen"
+          eigen_target.mkdir(parents=True)
+          shutil.copytree(eigen_source / "Eigen", eigen_target / "Eigen")
+          if (eigen_source / "unsupported").is_dir():
+              shutil.copytree(eigen_source / "unsupported", eigen_target / "unsupported")
+          for item in sorted(eigen_source.glob("COPYING*")):
+              if item.is_file():
+                  shutil.copy2(item, eigen_target / item.name)
+          assert (eigen_target / "Eigen/Dense").is_file()
+
+          (stage / "PORTABLE_BUILD.md").write_text("""# Pico Copter — portable flight-control source
+
+          Extract this ZIP anywhere. The 'pico_copter' directory is a complete
+          standalone firmware CMake project (without web/Actions or Git files).
+          Eigen 3.4.0 headers are bundled, so Eigen will NOT be downloaded.
+
+          External tools still required on your computer:
+          - Raspberry Pi Pico SDK 2.3.0 (including SDK submodules)
+          - ARM GCC bare-metal toolchain, CMake, and preferably Ninja
+          - Internet only if your Pico SDK/toolchain installation needs it
+
+          Build in a TERMINAL from inside the extracted pico_copter directory:
+
+          cmake -S . -B build -G Ninja -DPICO_SDK_PATH=/path/to/pico-sdk -DPICO_BOARD=pico -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+
+          UF2 output: build/pico_copter.uf2
+
+          For Pico 2: use -DPICO_BOARD=pico2 and a separate build directory.
+          For faster repeated gain changes: keep the 'build' directory,
+          rerun only 'cmake --build build --parallel'; do not delete build.
+          Edit PID gains in control.cpp, DShot rate/mode in dshot_config.hpp,
+          and diagnostic enable flags in debug_usb.hpp.
+          Safety: test without propellers before flight.
+
+          Note: the ZIP is source only; it contains no generated build output.
+          The Pico SDK and ARM compiler are toolchain dependencies, not part
+          of the portable project.
+          """.replace("          ", ""), encoding="utf-8")
+
+          archive = stage.parent / "pico_copter_source.zip"
+          with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED,
+                               compresslevel=6) as zf:
+              for item in sorted(stage.rglob("*")):
+                  if item.is_file():
+                      zf.write(item, arcname=item.relative_to(stage.parent))
+          with zipfile.ZipFile(archive) as zf:
+              assert zf.testzip() is None
+              names = zf.namelist()
+              assert any(x.endswith("/Eigen/Dense") for x in names)
+              assert not any("/tests/" in x or "/.github/" in x or "/web/" in x for x in names)
+          print(f"Portable source ZIP: {archive}, {archive.stat().st_size} bytes, "
+                f"{len(copied)} firmware files")
+          PY
+
+          # Smoke-test the extracted ZIP in an OUTSIDE directory, with no
+          # access to repo-relative sources or to GitLab for Eigen.
+          mkdir -p "${RUNNER_TEMP}/pico-source-extraction"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import zipfile
+
+          with zipfile.ZipFile("portable-export/pico_copter_source.zip") as zf:
+              zf.extractall(Path(os.environ["RUNNER_TEMP"]) / "pico-source-extraction")
+          PY
+          cmake \
+            -S "${RUNNER_TEMP}/pico-source-extraction/pico_copter" \
+            -B "${RUNNER_TEMP}/pico-source-build" -G Ninja \
+            -DPICO_SDK_PATH="${PICO_SDK_PATH}" \
+            -DPICO_BOARD=pico \
+            -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            2>&1 | tee configure-portable.log
+          cmake --build "${RUNNER_TEMP}/pico-source-build" \
+            --target pico_copter --parallel "$(nproc)" \
+            2>&1 | tee build-portable.log
+          test -s "${RUNNER_TEMP}/pico-source-build/pico_copter.uf2"
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pico-copter-build-logs-${{ github.run_number }}
+          path: |
+            configure.log
+            build.log
+            configure-pico2.log
+            build-pico2.log
+            configure-opposite.log
+            build-opposite.log
+            configure-portable.log
+            build-portable.log
+          if-no-files-found: warn
+          retention-days: 1
+
+      - name: Prepare firmware and Pages site
+        shell: bash
+        run: |
+          set -euxo pipefail
+
+          rm -rf output site
+          mkdir -p output site/firmware
+          cp -a web/. site/
+          test -s portable-export/pico_copter_source.zip
+          cp portable-export/pico_copter_source.zip output/pico_copter_source.zip
+          cp portable-export/pico_copter_source.zip site/firmware/pico_copter_source.zip
+
+          for DEST in output site/firmware; do
+            cp build/pico_copter.uf2 "${DEST}/pico_copter.uf2"
+            cp build-pico2/pico_copter.uf2 "${DEST}/pico_copter_pico2.uf2"
+            sha256sum build/pico_copter.uf2 \
+              | sed 's#  .*#  pico_copter.uf2#' \
+              > "${DEST}/pico_copter.uf2.sha256"
+            stat -c '%s' build/pico_copter.uf2 > "${DEST}/size.txt"
+            sha256sum build-pico2/pico_copter.uf2 \
+              | sed 's#  .*#  pico_copter_pico2.uf2#' \
+              > "${DEST}/pico_copter_pico2.uf2.sha256"
+            stat -c '%s' build-pico2/pico_copter.uf2 > "${DEST}/size-pico2.txt"
+            cp configure.log build.log configure-pico2.log build-pico2.log "${DEST}/"
+          done
+
+          export SOURCE_ZIP_SHA256 SOURCE_ZIP_SIZE
+          SOURCE_ZIP_SHA256="$(sha256sum portable-export/pico_copter_source.zip | cut -d ' ' -f 1)"
+          SOURCE_ZIP_SIZE="$(stat -c '%s' portable-export/pico_copter_source.zip)"
+          export UF2_SHA256 UF2_SIZE UF2_PICO2_SHA256 UF2_PICO2_SIZE BUILT_AT
+          UF2_SHA256="$(sha256sum build/pico_copter.uf2 | cut -d ' ' -f 1)"
+          UF2_SIZE="$(stat -c '%s' build/pico_copter.uf2)"
+          UF2_PICO2_SHA256="$(sha256sum build-pico2/pico_copter.uf2 | cut -d ' ' -f 1)"
+          UF2_PICO2_SIZE="$(stat -c '%s' build-pico2/pico_copter.uf2)"
+          BUILT_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          # CI builds the header default. Read it to label the UF2 correctly.
+          config_text = Path("firmware/pico_copter/dshot_config.hpp").read_text(encoding="utf-8")
+          speed_match = re.search(r"(?m)^#define DSHOT_RATE_KBPS (150|300|600|1200)\s*$", config_text)
+          if not speed_match:
+              raise RuntimeError("DShot speed missing/invalid in dshot_config.hpp")
+          rate_kbps = int(speed_match.group(1))
+          mode_match = re.search(r"(?m)^#define DSHOT_BIDIRECTIONAL ([01])\s*$", config_text)
+          if not mode_match:
+              raise RuntimeError("DShot mode missing/invalid in dshot_config.hpp")
+          bidirectional = mode_match.group(1) == "1"
+          mode_id = "bidir" if bidirectional else "oneway"
+          mode_ja = "双方向" if bidirectional else "単方向"
+          rx_ja = "eRPM受信あり" if bidirectional else "eRPM受信なし"
+
+          manifest = {
+              "appId": "pico_copter",
+              "appName": "Pico Copter",
+              "dshotRateKbps": rate_kbps,
+              "dshotMode": mode_id,
+              "description": f"Raspberry Pi Pico (RP2040) 用の{mode_ja}DShot{rate_kbps}（{rx_ja}）です。",
+              "boardId": "pico",
+              "boardName": "Raspberry Pi Pico",
+              "file": "pico_copter.uf2",
+              "downloadName": "pico_copter-pico.uf2",
+              "size": int(os.environ["UF2_SIZE"]),
+              "sha256": os.environ["UF2_SHA256"],
+              "sourceCommit": os.environ["GITHUB_SHA"],
+              "sourcePath": "firmware/pico_copter",
+              "sourcePackageFile": "pico_copter_source.zip",
+              "sourcePackageDownloadName": "pico_copter_source.zip",
+              "sourcePackageSize": int(os.environ["SOURCE_ZIP_SIZE"]),
+              "sourcePackageSha256": os.environ["SOURCE_ZIP_SHA256"],
+              "sourcePackageIncludesEigen": True,
+              "picoSdkRef": os.environ["PICO_SDK_REF"],
+              "eigenVersion": os.environ["EIGEN_VERSION"],
+              "eigenRef": os.environ["EIGEN_REF"],
+              "builtAt": os.environ["BUILT_AT"],
+              "repository": os.environ["GITHUB_REPOSITORY"],
+          }
+
+          text = json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
+          Path("output/manifest.json").write_text(text, encoding="utf-8")
+          Path("site/firmware/manifest.json").write_text(text, encoding="utf-8")
+
+          # Second manifest and UF2 for Raspberry Pi Pico 2 (RP2350).
+          # Preserve the original manifest.json/UF2 for first-generation Pico.
+          manifest_pico2 = {
+              **manifest,
+              "description": f"Pico 2 (RP2350)向け{mode_ja}DShot{rate_kbps}（{rx_ja}）です。Pico 2での実機検証は未完了です。",
+              "boardId": "pico2",
+              "boardName": "Raspberry Pi Pico 2 (RP2350)",
+              "file": "pico_copter_pico2.uf2",
+              "downloadName": "pico_copter-pico2.uf2",
+              "size": int(os.environ["UF2_PICO2_SIZE"]),
+              "sha256": os.environ["UF2_PICO2_SHA256"],
+          }
+          text2 = json.dumps(manifest_pico2, ensure_ascii=False, indent=2) + "\n"
+          Path("output/manifest-pico2.json").write_text(text2, encoding="utf-8")
+          Path("site/firmware/manifest-pico2.json").write_text(text2, encoding="utf-8")
+          PY
+
+      - name: Upload Pico Copter firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: pico-copter-uf2-${{ github.run_number }}
+          path: output
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+      - name: Configure Pages
+        if: github.ref == 'refs/heads/main'
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

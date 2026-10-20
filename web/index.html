@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Pico Copter UF2 Builder</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <p class="eyebrow">Raspberry Pi Pico / Pico 2</p>
+      <h1>Pico Copter UF2 Builder</h1>
+      <p>送信方式（双方向・単方向）と通信速度はファームウェア内の dshot_config.hpp で設定します。このページではビルド済みUF2と適用された設定を表示します。</p>
+    </header>
+
+    <section class="card">
+      <h2>最新ビルド</h2>
+      <p><label for="board-choice">対象の基板：</label>
+        <select id="board-choice" aria-label="UF2の対象基板">
+          <option value="pico" selected>Raspberry Pi Pico（RP2040）</option>
+          <option value="pico2">Raspberry Pi Pico 2（RP2350）</option>
+        </select></p>
+      <p id="status">ビルド情報を取得しています…</p>
+      <p id="description" class="muted"></p>
+      <dl class="metadata">
+        <div><dt>対象</dt><dd id="board">—</dd></div>
+        <div><dt>ファイル</dt><dd id="filename">—</dd></div>
+        <div><dt>サイズ</dt><dd id="size">—</dd></div>
+        <div><dt>SHA-256</dt><dd id="sha256">—</dd></div>
+        <div><dt>ソース</dt><dd id="source-commit">—</dd></div>
+        <div><dt>Pico SDK</dt><dd id="sdk">—</dd></div>
+        <div><dt>Eigen</dt><dd id="eigen">—</dd></div>
+        <div><dt>ビルド日時</dt><dd id="built-at">—</dd></div>
+      </dl>
+      <a id="download" class="button disabled" aria-disabled="true">UF2をダウンロード</a>
+    </section>
+
+    <section class="card" id="source-package">
+      <h2>飛行制御ソース一式（ZIP）</h2>
+      <p>Gitリポジトリ全体ではなく、<strong>飛行制御プログラム、各種ヘッダ、PIO、CMake設定、Eigen 3.4.0のヘッダとライセンス、ビルド手順</strong>だけをまとめたZIPです。研究室や手元のPCへ展開して、そのまま編集・ビルドできます。</p>
+      <dl class="metadata">
+        <div><dt>サイズ</dt><dd id="source-size">—</dd></div>
+        <div><dt>SHA-256</dt><dd id="source-sha256">—</dd></div>
+        <div><dt>更新元</dt><dd>上のUF2と同じソースコミット</dd></div>
+      </dl>
+      <a id="source-download" class="button disabled" aria-disabled="true">飛行制御ソース ZIPをダウンロード</a>
+      <p class="muted"><strong>別途必要なもの：</strong>Raspberry Pi Pico SDK 2.3.0、ARM GCC、CMake（Ninja推奨）。EigenはZIPに含まれるため、追加ダウンロード不要です。</p>
+      <p>展開した <code>pico_copter</code> フォルダ内で <code>PORTABLE_BUILD.md</code> の手順に従ってください。ゲイン調整を繰り返す際は、同じ <code>build</code> フォルダで増分ビルドできるので、毎回全体をコンパイルする必要はありません。</p>
+    </section>
+
+    <section class="card">
+      <h2>書き込み</h2>
+      <ol>
+        <li>使用する基板（Pico / Pico 2）を選び、対応するUF2をダウンロードします。</li>
+        <li>基板の<code>BOOTSEL</code>を押したままUSB接続します。</li>
+        <li>表示されたUSBドライブに、選んだ基板用のUF2をコピーします。</li>
+        <li>コピー後、基板が自動的に再起動します。</li>
+        <li>まずは<strong>プロペラなし</strong>でDShot300停止指令とモータ対応を確認してください。</li>
+      </ol>
+    </section>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

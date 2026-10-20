@@ -1,0 +1,15 @@
+; Standard one-way DShot: non-inverted data and standard CRC.
+; 8 PIO cycles/bit; configured PIO clock = DShot bitrate x 8.
+; DShot 0: HIGH 3 cycles, LOW 5; DShot 1: HIGH 6, LOW 2.
+; Idle LOW. The PIO stalls with sideset=0 if the TX FIFO is empty.
+; Derived from the previously used one-way DShot300 program in this repo.
+.program dshot_oneway
+.side_set 1
+.wrap_target
+bitloop:
+    out x, 1            side 0 [1] ; 2 cycles LOW
+    jmp !x bit_zero     side 1 [2] ; 3 cycles HIGH
+    jmp bitloop         side 1 [2] ; 3 more HIGH (1 bit)
+bit_zero:
+    nop                 side 0 [2] ; 3 LOW (0 bit)
+.wrap
