@@ -51,7 +51,16 @@
     </section>
 
     <section class="card">
-      <h2>書き込み</h2>
+      <h2>Arduino UNO R3 — BLHeli用インターフェース書き込み</h2>
+      <p>ESCの設定を確認するためにUNOを4-wayインターフェースにしたい場合、
+        UNO R3用HEXを<strong>Chrome / Edgeから直接UNOへ書き込める</strong>専用ページを利用できます。
+        Web SerialでUNOに接続し、書き込み後の読み戻し照合も行います。</p>
+      <p>ESC自体の設定変更はここでは行わず、UNOの準備後にBLHeliSuite32から行ってください。</p>
+      <a href="./uno-flasher.html" class="button">Arduino UNO書き込みページへ</a>
+    </section>
+
+    <section class="card">
+      <h2>書き込み（Pico）</h2>
       <ol>
         <li>使用する基板（Pico / Pico 2）を選び、対応するUF2をダウンロードします。</li>
         <li>基板の<code>BOOTSEL</code>を押したままUSB接続します。</li>

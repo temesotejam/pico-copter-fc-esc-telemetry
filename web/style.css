@@ -19,3 +19,10 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .error { font-weight: 700; }
 code { overflow-wrap: anywhere; }
 @media (max-width: 560px) { .metadata div { grid-template-columns: 1fr; gap: 0; } }
+
+/* Arduino UNO flashing page (no framework or external dependencies). */
+.checkline { display: flex; gap: 12px; align-items: start; margin: 18px 0; }
+input[type="file"] { display: block; margin: 10px 0; max-width: 100%; }
+button.button { border: 0; cursor: pointer; font: inherit; font-weight: 700; }
+button.button:disabled { opacity: .45; cursor: not-allowed; }
+progress { accent-color: LinkText; }

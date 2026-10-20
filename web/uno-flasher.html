@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Arduino UNO 4-way 書き込み | Pico Copter FC</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <p class="eyebrow">Arduino UNO R3 · Windows · Chrome / Edge</p>
+      <h1>UNOへの4-way書き込み</h1>
+      <p>BLHeliSuite32で使うArduino 4-wayインターフェースを、UNO R3にブラウザから書き込むためのページです。</p>
+      <p><a href="./index.html">← Pico用UF2配布ページへ戻る</a></p>
+    </header>
+
+    <section class="card">
+      <h2>対応範囲と注意</h2>
+      <p><strong>対象：Arduino UNO R3（ATmega328P、通常のOptiboot 115200bps）だけ。</strong>
+        UNO R4 / Mega / Leonardo / RP2040 / Picoや、旧ブートローダーのUNO互換機には対応しません。</p>
+      <p>ブラウザのWeb Serial APIを利用するので<strong>WindowsのChromeかEdge</strong>で、このHTTPSページを開いてください。
+        USBアクセスはブラウザが許可したCOMポートに限られます。選択したHEXは外部サーバーへ送信されません。</p>
+      <p class="error">プロペラを取り外し、書き込み中はUNOにESCを接続しないでください。UNO内の既存スケッチは消去されます。
+        接続先の基板とHEXが正しいことを確認してください。</p>
+    </section>
+
+    <section class="card">
+      <h2>1. Arduino用4-way HEXを選ぶ</h2>
+      <p>BLHeliSuite32を展開したフォルダから、<strong>UNO（ATmega328P）用 Arduino 4way-interface</strong>の
+        <code>.hex</code> ファイルを選んでください。Nano用、BLHeli ESC本体用のHEXは選ばないでください。</p>
+      <p>著作権・配布条件を確認できないファームウェアはこのサイトに同梱していません。
+        ファイルはご自身で正規入手したものを選択してください。</p>
+      <label for="hex-file">UNO 4-way HEX (.hex)</label>
+      <input id="hex-file" type="file" accept=".hex,text/plain">
+      <p id="hex-info" class="muted" role="status">ファイル未選択</p>
+    </section>
+
+    <section class="card">
+      <h2>2. UNO R3をUSBでつなぐ</h2>
+      <ol>
+        <li>Arduino UNO R3だけをPCのUSBポートに接続します。ESC側の電源・信号線は外してください。</li>
+        <li>デバイスマネージャーでUNOのCOM番号を確認します。他のシリアルモニタを閉じます。</li>
+        <li>下のボタンを押し、Chrome / Edgeに表示されたUNOのCOMポートを選択します。</li>
+        <li>UNOのマイコン識別子を確認後、HEXを書き込み、各ページを読み戻して照合します。</li>
+      </ol>
+      <label class="checkline"><input type="checkbox" id="safety-check">
+        ESCを外し、UNO R3とUNO用4-way HEXであることを確認しました。</label>
+      <p><button id="flash-button" class="button" type="button" disabled>UNOを選択して書き込む</button></p>
+      <progress id="upload-progress" max="100" value="0" style="width:100%" aria-label="書き込み進捗"></progress>
+      <p id="upload-status" role="status" aria-live="polite">待機中</p>
+      <p class="muted">ボタンを押しても自動的に書き込みは始まりません。COMポートの選択が必要です。
+        途中で失敗した場合は、UNOの接続を確認して再実行できます。</p>
+    </section>
+
+    <section class="card">
+      <h2>3. ESCの設定を確認する</h2>
+      <p>このページが書き込むのは<strong>Arduino UNO内のインターフェース</strong>だけです。
+        ESC本体の設定読み出しや <code>Auto Telemetry</code> の変更はまだ行いません。</p>
+      <ol>
+        <li>書き込み成功後、UNOをUSBから一度抜いて再接続します。</li>
+        <li>UNO側の4-wayインターフェースに合うピン割り当てを確認し、ESCの信号とGNDを接続します。</li>
+        <li>プロペラを外した状態で、ESCには別電源を使用します。</li>
+        <li>BLHeliSuite32で <code>BLHeli32 Bootloader (4way-if)</code> を選んで <code>Read Setup</code> を実行します。</li>
+      </ol>
+      <p>BLHeli_32用ESCを書き換える機能は実装していません。設定確認時にESCのファームウェア更新は不要です。</p>
+    </section>
+  </main>
+  <script type="module" src="./uno-flasher.js"></script>
+</body>
+</html>

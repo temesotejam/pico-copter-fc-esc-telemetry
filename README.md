@@ -10,6 +10,11 @@ motor outputs remain active, whether an ESC is recognized or not.
 Data are shown on USB as
 `#ESC_UART`: temperature, voltage, current, mAh, and electrical RPM per ESC.
 
+**Arduino UNO R3 (ATmega328P) browser writer:** [UNO 4-way HEX書き込み](https://temesotejam.github.io/pico-copter-fc-esc-telemetry/uno-flasher.html).
+UNO R3用の正規に入手した4-way HEXを選び、Windows Chrome/EdgeのWeb Serial経由で書き込み・読み戻し検証します。
+HEXファイルやESCの専用ファームウェアはサイトに同梱せず、**このページはESC本体の設定変更を行いません**。
+UNO書き込み完了後、ESCのAuto Telemetry設定はBLHeliSuite32で確認してください。
+
 **See [wiring, voltage limits and no-propeller test procedure](firmware/pico_copter/ESC_SERIAL_TELEMETRY.md).**
 The new serial feedback is diagnostic only. The connected status is
 based on DShot replies, not stray UART bytes, and expires after 250 ms

@@ -139,6 +139,15 @@ jobs:
             ccache --set-config=compression=true
           CCACHE_DIR="${GITHUB_WORKSPACE}/.ccache" ccache --zero-stats
 
+      - name: Test browser Arduino UNO uploader (HEX, STK500v1 and readback)
+        shell: bash
+        run: |
+          set -euxo pipefail
+          node --check web/uno-flasher-core.js
+          node --check web/uno-flasher.js
+          node --check web/tests/test_uno_flasher.mjs
+          node --experimental-default-type=module web/tests/test_uno_flasher.mjs
+
       - name: Test SBUS parser and link recovery
         shell: bash
         run: |
