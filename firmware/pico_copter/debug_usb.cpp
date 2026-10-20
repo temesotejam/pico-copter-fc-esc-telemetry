@@ -212,7 +212,8 @@ void poll() {
             // Never present stale measurements as valid.
             printf("#ESC_UART %s detected=%u valid=%u temp_c=%ld voltage_v=%.2f "
                    "current_a=%.2f consumed_mah=%ld erpm=%ld "
-                   "age_ms=%ld requests=%lu rx=%lu crc=%lu timeout=%lu\n",
+                   "age_ms=%ld requests=%lu rx=%lu auto_rx=%lu req_rx=%lu "
+                   "confirm=%lu timeout=%lu src=%s\n",
                    names[i], link.motors[i].fresh ? 1u : 0u,
                    m.fresh ? 1u : 0u,
                    m.fresh ? static_cast<long>(m.reading.temperature_c) : -1L,
@@ -223,11 +224,25 @@ void poll() {
                    m.received ? static_cast<long>(m.age_ms) : -1L,
                    static_cast<unsigned long>(m.requests),
                    static_cast<unsigned long>(m.received),
-                   static_cast<unsigned long>(m.crc_errors),
-                   static_cast<unsigned long>(m.timeouts));
+                   static_cast<unsigned long>(m.passive_received),
+                   static_cast<unsigned long>(m.requested_received),
+                   static_cast<unsigned long>(m.corroborating),
+                   static_cast<unsigned long>(m.timeouts),
+                   m.received ? (m.last_was_passive ? "auto" : "request")
+                              : "none");
         }
-        printf("#ESC_UART SUM current_a=%.2f fresh=%u/4 uart_enabled=%u stray=%lu\n",
+        printf("#ESC_UART SUM current_a=%.2f fresh=%u/4 uart_enabled=%u "
+               "mode=%s mask=0x%02x bytes=%lu plausible=%lu crc_windows=%lu "
+               "range_reject=%lu unassigned=%lu gaps=%lu no_esc_bytes=%lu\n",
                total_current_a, fresh_count, esc.enabled ? 1u : 0u,
+               esc.passive_active ? "stream" : "poll_or_wait",
+               static_cast<unsigned int>(esc.connected_mask),
+               static_cast<unsigned long>(esc.bytes_total),
+               static_cast<unsigned long>(esc.plausible_frames),
+               static_cast<unsigned long>(esc.bad_crc_windows),
+               static_cast<unsigned long>(esc.bad_range_frames),
+               static_cast<unsigned long>(esc.unassigned_frames),
+               static_cast<unsigned long>(esc.gaps),
                static_cast<unsigned long>(esc.stray_bytes));
     }
 }

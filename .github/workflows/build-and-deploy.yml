@@ -168,6 +168,9 @@ jobs:
             firmware/pico_copter/tests/test_esc_serial.cpp -o /tmp/esc-serial-test
           /tmp/esc-serial-test
           g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
+            firmware/pico_copter/tests/test_esc_serial_stream.cpp -o /tmp/esc-serial-stream-test
+          /tmp/esc-serial-stream-test
+          g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
             firmware/pico_copter/tests/test_esc_dshot_presence.cpp -o /tmp/esc-dshot-presence-test
           /tmp/esc-dshot-presence-test
           g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \

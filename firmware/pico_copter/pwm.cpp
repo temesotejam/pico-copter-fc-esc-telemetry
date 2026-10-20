@@ -247,11 +247,21 @@ void pwm_wrap_irq_handler() {
     pwm_clear_irq(pwm_gpio_to_slice_num(PWM_MAINLOOP_PIN));
     // Existing 400Hz motor and SBUS/failsafe calculations run unchanged.
     MAINLOOP();
-    // UART1 RX reports on a separate pad. This is bounded, nonblocking.
-    esc_serial::service_400hz(time_us_32());
     // Read the previous cycle's RX FIFO only; do not wait for the ESC.
 #if DSHOT_BIDIRECTIONAL
     collect_previous_telemetry();
+    // Source identification for unsolicited UART frames uses ONLY fresh
+    // checksum-valid bidirectional DShot replies from individual GPIOs.
+    uint8_t esc_mask = 0u;
+    const uint32_t now_us = time_us_32();
+    for (unsigned i = 0; i < MOTOR_COUNT; ++i) {
+        if (esc_dshot_presence::connected(
+                telemetry[i].rx_ok, telemetry[i].last_good_us, now_us))
+            esc_mask |= static_cast<uint8_t>(1u << i);
+    }
+    esc_serial::service_400hz(now_us, esc_mask);
+#else
+    esc_serial::service_400hz(time_us_32(), 0);
 #endif
     start_next_exchange();
 }

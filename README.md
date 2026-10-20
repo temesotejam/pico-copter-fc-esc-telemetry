@@ -18,8 +18,13 @@ UNO書き込み完了後、ESCのAuto Telemetry設定はBLHeliSuite32で確認�
 **See [wiring, voltage limits and no-propeller test procedure](firmware/pico_copter/ESC_SERIAL_TELEMETRY.md).**
 The new serial feedback is diagnostic only. The connected status is
 based on DShot replies, not stray UART bytes, and expires after 250 ms
-without valid eRPM. UART telemetry is not requested while the corresponding
-DShot channel is unrecognized or commanded to stop.
+without valid eRPM. The UART parser now scans **continuous spontaneous
+frames** without waiting for DShot requests. When exactly one ESC is detected,
+it can accept corroborated spontaneous packets even while stopped; it falls
+back to request-bit polling when no spontaneous stream exists and the motor
+is commanded to run. Bad-range packets and uncorroborated first packets
+are withheld from displayed values. Per-motor telemetry from multiple
+unsolicited ESCs on a shared TX line cannot be safely identified.
 Hardware reception from the
 specific MAD ESC TX pad has not yet been validated; this is not a
 flight-tested firmware release. Original motor mixer, PID/EKF, SBUS failsafe,

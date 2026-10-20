@@ -1,13 +1,15 @@
 /*
- * Non-blocking BLHeli_32/KISS ESC TX-pad telemetry on UART1 RX / GPIO5.
- * Each 10-byte 115200/8N1 packet follows a telemetry-bit DShot command.
- * ESCs share the UART RX line; requests are issued to only one ESC at a time.
+ * Continuous, nonblocking BLHeli_32 TX-pad UART telemetry at 115200/8N1.
+ * Some ESC firmware autonomously transmits ~10-byte frames every ~32ms.
+ * Do NOT reset packet phase when requesting DShot data; scan every byte.
  *
- * UART1 RX IRQ is higher priority than the 400 Hz PWM tick to prevent
- * 115200-baud receive overruns during IMU/flight-control calculations.
- * ISR stores a decoded snapshot only. All USB printing is elsewhere.
+ * Source attribution: only one bidir-DShot-detected ESC -> passive UART
+ * frames can safely be assigned. Multiple detected ESCs -> unsolicited
+ * packets cannot be assigned to a motor (no address in KISS frame).
+ * Never change flight-control outputs/arming/failsafe based on UART data.
  */
 #include "esc_serial_uart.hpp"
+#include "esc_serial_stream.hpp"
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
 #include "hardware/irq.h"
@@ -16,80 +18,129 @@
 namespace esc_serial {
 namespace {
 struct MotorState {
-    esc_serial_protocol::Reading reading;
+    esc_serial_protocol::Reading reading{};
+    esc_serial_stream::Gate gate{};
     uint32_t last_good_us = 0;
     uint32_t requests = 0;
     uint32_t received = 0;
-    uint32_t crc_errors = 0;
+    uint32_t passive_received = 0;
+    uint32_t requested_received = 0;
+    uint32_t rejects = 0;
+    uint32_t corroborating = 0;
     uint32_t timeouts = 0;
+    bool last_was_passive = false;
 };
 MotorState motors[4]{};
-uint8_t rx_buffer[esc_serial_protocol::kFrameSize]{};
-volatile uint8_t rx_count = 0;
+esc_serial_stream::ByteScan scanner{};
+volatile uint8_t connected_mask = 0; // refreshed in 400Hz DShot ISR
 volatile uint8_t pending_motor = 0;
 volatile bool pending = false;
 uint8_t next_motor = 0;
 uint32_t request_started_us = 0;
 uint32_t last_request_us = 0;
-uint32_t last_byte_us = 0;
+uint32_t last_unsolicited_us = 0;
+bool seen_unsolicited = false;
+uint32_t bytes_total = 0;
+uint32_t bad_crc_windows = 0;
+uint32_t bad_range_frames = 0;
+uint32_t plausible_frames = 0;
+uint32_t unassigned_frames = 0;
 uint32_t stray_bytes = 0;
 bool initialized = false;
+
+int sole_motor(uint8_t mask) {
+    if (mask == 0 || (mask & (mask - 1u))) return -1;
+    for (int i = 0; i < 4; ++i)
+        if (mask & (1u << i)) return i;
+    return -1;
+}
 
 void uart1_rx_handler() {
     while (uart_is_readable(uart1)) {
         const uint8_t byte = static_cast<uint8_t>(uart_getc(uart1));
         const uint32_t now_us = time_us_32();
-        if (!pending) {
-            ++stray_bytes;
+        ++bytes_total;
+        if (!connected_mask) ++stray_bytes;
+
+        esc_serial_protocol::Reading reading{};
+        const auto result = scanner.push(byte, now_us, reading);
+        if (result == esc_serial_stream::ScanResult::Partial) continue;
+        if (result == esc_serial_stream::ScanResult::BadCrc) {
+            ++bad_crc_windows;
             continue;
         }
-        // A long inter-byte gap indicates a partial or unrelated packet.
-        // Never merge two incomplete packets into one valid reading.
-        if (rx_count != 0 &&
-            static_cast<uint32_t>(now_us - last_byte_us) > 2000u) {
-            rx_count = 0;
+        if (result == esc_serial_stream::ScanResult::BadRange) {
+            ++bad_range_frames;
+            continue;
         }
-        last_byte_us = now_us;
-        rx_buffer[rx_count++] = byte;
-        if (rx_count == esc_serial_protocol::kFrameSize) {
-            MotorState& state = motors[pending_motor];
-            esc_serial_protocol::Reading reading{};
-            if (esc_serial_protocol::decode(rx_buffer, reading)) {
-                state.reading = reading;
-                state.last_good_us = now_us;
-                ++state.received;
-            } else {
-                ++state.crc_errors;
-            }
-            rx_count = 0;
-            pending = false;
+
+        ++plausible_frames;
+        const bool requested = pending;
+        // A valid unsolicited frame indicates that the TX output can be
+        // streaming without DShot telemetry-request bits.
+        if (!requested) {
+            seen_unsolicited = true;
+            last_unsolicited_us = now_us;
         }
+
+        const int single = sole_motor(connected_mask);
+        int owner = -1;
+        if (single >= 0) {
+            // The only detected ESC is the only attributable source.
+            owner = single;
+        } else if (requested && (connected_mask & (1u << pending_motor))) {
+            // For multiple detected ESCs, only a pending, individually
+            // requested reply is attributable. Autonomous packets are not.
+            // If autonomous traffic is active, request scheduling is paused.
+            owner = pending_motor;
+        }
+        if (requested) pending = false;
+
+        if (owner < 0) {
+            ++unassigned_frames;
+            continue;
+        }
+        MotorState& state = motors[owner];
+        if (!state.gate.accept(reading, now_us)) {
+            ++state.corroborating;
+            continue;
+        }
+        state.reading = reading;
+        state.last_good_us = now_us;
+        state.last_was_passive = !requested;
+        ++state.received;
+        if (requested) ++state.requested_received;
+        else ++state.passive_received;
     }
 }
 }  // namespace
 
 void init() {
     if (!kEnabled) return;
-    // GPIO5 = UART1 RX. UART0 and its existing SBUS IRQ are untouched.
     uart_init(uart1, kBaud);
     uart_set_hw_flow(uart1, false, false);
     uart_set_format(uart1, 8, 1, UART_PARITY_NONE);
-    uart_set_fifo_enabled(uart1, false); // IRQ once per byte.
+    uart_set_fifo_enabled(uart1, false);
     gpio_set_function(kRxGpio, GPIO_FUNC_UART);
     irq_set_exclusive_handler(UART1_IRQ, uart1_rx_handler);
-    // Higher priority than the flight-control PWM IRQ (default 0x80).
     irq_set_priority(UART1_IRQ, 0x40);
     irq_set_enabled(UART1_IRQ, true);
     uart_set_irq_enables(uart1, true, false);
     initialized = true;
 }
 
-void service_400hz(uint32_t now_us) {
+void service_400hz(uint32_t now_us, uint8_t connected) {
     if (!kEnabled || !initialized) return;
+    const uint8_t new_mask = connected & 0x0fu;
+    if (new_mask != connected_mask) {
+        // A change of connected motor(s) may change who is driving TX.
+        // Never reuse the preceding source's corroboration reference.
+        for (MotorState& motor : motors) motor.gate.clear();
+        connected_mask = new_mask;
+    }
     if (pending &&
         static_cast<uint32_t>(now_us - request_started_us) >= kResponseTimeoutUs) {
         ++motors[pending_motor].timeouts;
-        rx_count = 0;
         pending = false;
     }
 }
@@ -100,20 +151,19 @@ bool request_dshot_telemetry(uint8_t motor_index, uint16_t throttle,
         motor_index != next_motor ||
         static_cast<uint32_t>(now_us - last_request_us) < kRequestSpacingUs)
         return false;
-    // Rotate past absent ESCs, or stopped motors, without scheduling a UART
-    // response. An ESC becomes eligible only after a fresh, CRC-valid eRPM
-    // response has been received on its bidirectional DShot GPIO.
-    if (!dshot_connected || throttle == 0) {
-        next_motor = static_cast<uint8_t>((next_motor + 1) % 4);
+    next_motor = static_cast<uint8_t>((next_motor + 1) % 4);
+    if (!dshot_connected || throttle == 0) return false;
+
+    // If valid autonomous frames are already arriving, further request
+    // bits are redundant and can collide with the auto-transmission.
+    // A 250ms absence allows request-driven fallback for Auto=Off ESCs.
+    if (seen_unsolicited &&
+        static_cast<uint32_t>(now_us - last_unsolicited_us) <= kPassiveHoldUs)
         return false;
-    }
-    // The caller has verified DShot FIFO capacity. UART1 IRQ may preempt
-    // this lower-priority ISR; publish pending=true only after state reset.
-    rx_count = 0;
+
     pending_motor = motor_index;
     request_started_us = now_us;
     last_request_us = now_us;
-    next_motor = static_cast<uint8_t>((next_motor + 1) % 4);
     ++motors[motor_index].requests;
     pending = true;
     return true;
@@ -123,24 +173,37 @@ Snapshot snapshot() {
     Snapshot out{};
     out.enabled = kEnabled && initialized;
     if (!out.enabled) return out;
-    // UART1 and PWM ISR both run on core0; no core1 access to these fields.
     const uint32_t irq_state = save_and_disable_interrupts();
     const uint32_t now_us = time_us_32();
     out.stray_bytes = stray_bytes;
+    out.bytes_total = bytes_total;
+    out.bad_crc_windows = bad_crc_windows;
+    out.bad_range_frames = bad_range_frames;
+    out.plausible_frames = plausible_frames;
+    out.unassigned_frames = unassigned_frames;
+    out.gaps = scanner.gaps;
+    out.connected_mask = connected_mask;
+    out.passive_active = seen_unsolicited &&
+        static_cast<uint32_t>(now_us - last_unsolicited_us) <= kPassiveHoldUs;
     for (unsigned i = 0; i < 4; ++i) {
-        out.motors[i].reading = motors[i].reading;
-        out.motors[i].requests = motors[i].requests;
-        out.motors[i].received = motors[i].received;
-        out.motors[i].crc_errors = motors[i].crc_errors;
-        out.motors[i].timeouts = motors[i].timeouts;
-        if (motors[i].received) {
-            out.motors[i].age_ms =
-                static_cast<uint32_t>(now_us - motors[i].last_good_us) / 1000u;
-            out.motors[i].fresh =
-                static_cast<uint32_t>(now_us - motors[i].last_good_us) <= kFreshUs;
+        const MotorState& m = motors[i];
+        auto& dst = out.motors[i];
+        dst.reading = m.reading;
+        dst.requests = m.requests;
+        dst.received = m.received;
+        dst.passive_received = m.passive_received;
+        dst.requested_received = m.requested_received;
+        dst.rejects = m.rejects;
+        dst.corroborating = m.corroborating;
+        dst.timeouts = m.timeouts;
+        dst.last_was_passive = m.last_was_passive;
+        if (m.received) {
+            dst.age_ms = static_cast<uint32_t>(now_us - m.last_good_us) / 1000u;
+            dst.fresh = static_cast<uint32_t>(now_us - m.last_good_us) <= kFreshUs
+                && (connected_mask & (1u << i));
         }
     }
     restore_interrupts(irq_state);
     return out;
 }
-} // namespace esc_serial
+}  // namespace esc_serial
