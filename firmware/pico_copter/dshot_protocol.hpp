@@ -13,7 +13,7 @@ constexpr uint16_t kStop = 0;
 constexpr uint16_t kMinimumThrottle = 48;
 constexpr uint16_t kMaximumThrottle = 2047;
 
-// Unidirectional DShot: telemetry bit 0, normal (non-inverted) CRC.
+// One-way DShot: optionally request a dedicated TX-pad UART response.
 // 0: motor stop; 1..47: reserved ESC commands; 48..2047: throttle.
 inline uint16_t frame(uint16_t throttle, bool telemetry = false) {
     if (throttle > kMaximumThrottle) throttle = kMaximumThrottle;
@@ -22,9 +22,9 @@ inline uint16_t frame(uint16_t throttle, bool telemetry = false) {
     return static_cast<uint16_t>((payload << 4) | checksum);
 }
 
-inline uint16_t bidirectional_frame(uint16_t throttle) {
+inline uint16_t bidirectional_frame(uint16_t throttle, bool telemetry = false) {
     if (throttle > kMaximumThrottle) throttle = kMaximumThrottle;
-    const uint16_t payload = static_cast<uint16_t>(throttle << 1);
+    const uint16_t payload = static_cast<uint16_t>((throttle << 1) | (telemetry ? 1u : 0u));
     const uint16_t checksum = static_cast<uint16_t>(
         ~(payload ^ (payload >> 4) ^ (payload >> 8)) & 0x0fu);
     return static_cast<uint16_t>((payload << 4) | checksum);
@@ -32,8 +32,8 @@ inline uint16_t bidirectional_frame(uint16_t throttle) {
 
 // Active bidirectional PIO: invert the complete 16-bit logical packet,
 // place it in bits 31..16, then shift out MSB-first with MANUAL pull.
-inline uint32_t bidirectional_pio_word(uint16_t throttle) {
-    return static_cast<uint32_t>(~bidirectional_frame(throttle) & 0xffffu) << 16;
+inline uint32_t bidirectional_pio_word(uint16_t throttle, bool telemetry = false) {
+    return static_cast<uint32_t>(~bidirectional_frame(throttle, telemetry) & 0xffffu) << 16;
 }
 
 // In bidirectional DShot, telemetry arrives on the motor signal wire.
@@ -61,8 +61,8 @@ inline uint16_t throttle_from_legacy_duty(float duty) {
 
 // This is the active frame-word helper in ONE-WAY builds.
 // Bidirectional builds use bidirectional_pio_word() instead.
-inline uint32_t pio_word(uint16_t command) {
-    return static_cast<uint32_t>(frame(command)) << 16;
+inline uint32_t pio_word(uint16_t command, bool telemetry = false) {
+    return static_cast<uint32_t>(frame(command, telemetry)) << 16;
 }
 } // namespace dshot
 

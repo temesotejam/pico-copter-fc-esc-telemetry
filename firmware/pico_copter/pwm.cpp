@@ -16,6 +16,7 @@
  */
 #include "pwm.hpp"
 #include "dshot_protocol.hpp"
+#include "esc_serial_uart.hpp"
 #include "dshot_bidir_decode.hpp"
 #include "dshot_tx.pio.h"
 #include "dshot_oneway.pio.h"
@@ -193,6 +194,7 @@ void collect_previous_telemetry() {
 
 void start_next_exchange() {
     if (!dshot_ready) return;
+    const uint32_t now_us = time_us_32();
     for (uint i = 0; i < MOTOR_COUNT; ++i) {
         const uint sm = sm_for_motor[i];
 #if DSHOT_BIDIRECTIONAL
@@ -209,11 +211,12 @@ void start_next_exchange() {
             continue;
         }
         const uint16_t throttle = dshot::throttle_from_legacy_duty(requested_duty[i]);
-        pio_sm_put(dshot_pio, sm, dshot::bidirectional_pio_word(throttle));
+        const bool serial_request = esc_serial::request_dshot_telemetry(i, throttle, now_us);
+        pio_sm_put(dshot_pio, sm, dshot::bidirectional_pio_word(throttle, serial_request));
         pio_sm_put(dshot_pio, sm, RX_TURNAROUND_CYCLES);
         ++telemetry[i].tx;
         telemetry[i].last_command = throttle;
-        telemetry[i].last_frame = dshot::bidirectional_frame(throttle);
+        telemetry[i].last_frame = dshot::bidirectional_frame(throttle, serial_request);
         motor_sent[i] = true;
 #else
         // No RX in one-way DShot. Keep motor commands non-blocking, and
@@ -225,10 +228,11 @@ void start_next_exchange() {
         }
         const uint16_t throttle =
             dshot::throttle_from_legacy_duty(requested_duty[i]);
-        pio_sm_put(dshot_pio, sm, dshot::pio_word(throttle));
+        const bool serial_request = esc_serial::request_dshot_telemetry(i, throttle, now_us);
+        pio_sm_put(dshot_pio, sm, dshot::pio_word(throttle, serial_request));
         ++telemetry[i].tx;
         telemetry[i].last_command = throttle;
-        telemetry[i].last_frame = dshot::frame(throttle);
+        telemetry[i].last_frame = dshot::frame(throttle, serial_request);
         motor_sent[i] = false;
 #endif
     }
@@ -238,6 +242,8 @@ void pwm_wrap_irq_handler() {
     pwm_clear_irq(pwm_gpio_to_slice_num(PWM_MAINLOOP_PIN));
     // Existing 400Hz motor and SBUS/failsafe calculations run unchanged.
     MAINLOOP();
+    // UART1 RX reports on a separate pad. This is bounded, nonblocking.
+    esc_serial::service_400hz(time_us_32());
     // Read the previous cycle's RX FIFO only; do not wait for the ESC.
 #if DSHOT_BIDIRECTIONAL
     collect_previous_telemetry();

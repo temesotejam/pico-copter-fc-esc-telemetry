@@ -9,6 +9,7 @@
 #include "pico_copter.hpp"
 #include "pico/stdio_usb.h"
 #include "dshot_config.hpp"
+#include "esc_serial_uart.hpp"
 
 namespace debug_usb {
 
@@ -193,6 +194,38 @@ void poll() {
                    static_cast<unsigned long>(m.rx_discarded),
                    static_cast<unsigned long>(m.tx_busy));
         }
+    }
+
+    if (kEnableEscSerial) {
+        const esc_serial::Snapshot esc = esc_serial::snapshot();
+        const char* names[4] = {"FR", "FL", "RR", "RL"};
+        double total_current_a = 0.0;
+        unsigned fresh_count = 0;
+        for (unsigned i = 0; i < 4; ++i) {
+            const esc_serial::MotorSnapshot& m = esc.motors[i];
+            if (m.fresh) {
+                total_current_a += m.reading.current_centiamp / 100.0;
+                ++fresh_count;
+            }
+            // Never present stale measurements as valid.
+            printf("#ESC_UART %s valid=%u temp_c=%ld voltage_v=%.2f "
+                   "current_a=%.2f consumed_mah=%ld erpm=%ld "
+                   "age_ms=%ld requests=%lu rx=%lu crc=%lu timeout=%lu\n",
+                   names[i], m.fresh ? 1u : 0u,
+                   m.fresh ? static_cast<long>(m.reading.temperature_c) : -1L,
+                   m.fresh ? m.reading.voltage_centivolt / 100.0 : -1.0,
+                   m.fresh ? m.reading.current_centiamp / 100.0 : -1.0,
+                   m.fresh ? static_cast<long>(m.reading.consumption_mah) : -1L,
+                   m.fresh ? static_cast<long>(m.reading.electrical_rpm) : -1L,
+                   m.received ? static_cast<long>(m.age_ms) : -1L,
+                   static_cast<unsigned long>(m.requests),
+                   static_cast<unsigned long>(m.received),
+                   static_cast<unsigned long>(m.crc_errors),
+                   static_cast<unsigned long>(m.timeouts));
+        }
+        printf("#ESC_UART SUM current_a=%.2f fresh=%u/4 uart_enabled=%u stray=%lu\n",
+               total_current_a, fresh_count, esc.enabled ? 1u : 0u,
+               static_cast<unsigned long>(esc.stray_bytes));
     }
 }
 

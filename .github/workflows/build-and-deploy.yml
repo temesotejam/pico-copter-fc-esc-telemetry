@@ -156,6 +156,9 @@ jobs:
             firmware/pico_copter/tests/test_dshot.cpp -o /tmp/dshot-test
           /tmp/dshot-test
           g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
+            firmware/pico_copter/tests/test_esc_serial.cpp -o /tmp/esc-serial-test
+          /tmp/esc-serial-test
+          g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
             firmware/pico_copter/tests/test_dshot_bidir.cpp -o /tmp/dshot-bidir-test
           /tmp/dshot-bidir-test
           g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
@@ -272,7 +275,7 @@ jobs:
           # Exclude repository web/Actions, historical files, host tests and
           # all firmware build outputs. No Git repository is needed to build.
           permitted = {".cpp", ".hpp", ".c", ".h", ".pio"}
-          fixed = {"CMakeLists.txt", "README.md", "DSHOT_UPSTREAM_LICENSE.txt"}
+          fixed = {"CMakeLists.txt", "README.md", "DSHOT_UPSTREAM_LICENSE.txt", "ESC_SERIAL_TELEMETRY.md"}
           copied = []
           for item in sorted(source.iterdir()):
               if item.is_file() and (item.suffix in permitted or item.name in fixed):

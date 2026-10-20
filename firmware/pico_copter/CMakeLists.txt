@@ -75,6 +75,7 @@ add_executable(pico_copter
     ekf.cpp
     lsm9ds1_reg.c
     pwm.cpp
+    esc_serial_uart.cpp
     radio.cpp
     control.cpp
 )

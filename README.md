@@ -1,4 +1,16 @@
-# Pico Copter FC
+# Pico Copter FC — ESC TX telemetry variant
+
+This repository branches from `temesotejam/pico-copter-fc` and adds
+**BLHeli_32 ESC dedicated TX-pad telemetry** to GPIO5 (UART1 RX), separate
+from the existing DShot motor controls. Data are shown on USB as
+`#ESC_UART`: temperature, voltage, current, mAh, and electrical RPM per ESC.
+
+**See [wiring, voltage limits and no-propeller test procedure](firmware/pico_copter/ESC_SERIAL_TELEMETRY.md).**
+The new serial feedback is diagnostic only. Hardware reception from the
+specific MAD ESC TX pad has not yet been validated; this is not a
+flight-tested firmware release. Original motor mixer, PID/EKF, SBUS failsafe,
+and 38-column CH5 logger remain unchanged.
+
 
 Raspberry Pi PicoおよびPico 2用のPico Copterファームウェアを、GitHub Actionsでコンパイルし、最新のUF2をGitHub Pagesからダウンロードするためのリポジトリです。
 

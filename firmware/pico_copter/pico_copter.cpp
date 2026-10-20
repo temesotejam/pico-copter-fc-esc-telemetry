@@ -1,6 +1,7 @@
 // comment
 #include "pico_copter.hpp"
 #include "debug_usb.hpp"
+#include "esc_serial_uart.hpp"
 
 //グローバル変数
 volatile uint8_t Arm_flag=0;
@@ -30,6 +31,10 @@ int main(void)
   
   //Initialize synchronized RAM flight recorder before enabling 400 Hz IRQ.
   flight_log_init();
+
+  // Start independent UART1 RX for BLHeli_32 dedicated TX telemetry.
+  // GPIO5 is separate from UART0 SBUS and PIO DShot.
+  esc_serial::init();
 
   //Initialize PWM
   //Start 400Hz Interval

@@ -1,4 +1,12 @@
-# Pico Copter firmware
+# Pico Copter firmware (BLHeli_32 serial TX telemetry variant)
+
+This branch adds a separate ESC TX-pad 115200 baud receive path at
+**GPIO5/UART1 RX**. When a motor runs, each ESC is requested in turn using
+the DShot telemetry bit. New `#ESC_UART` USB diagnostics report voltage,
+current, consumption, temperature and electrical RPM with CRC and age.
+Read [ESC_SERIAL_TELEMETRY.md](ESC_SERIAL_TELEMETRY.md) before wiring.
+The 38-field CH5 flight log and all original motor/RC control are untouched.
+
 
 このフォルダが、Raspberry Pi Picoへ書き込むファームウェアの独立したプロジェクトです。共有するときは`firmware/pico_copter`フォルダをそのまま取り出せます。
 

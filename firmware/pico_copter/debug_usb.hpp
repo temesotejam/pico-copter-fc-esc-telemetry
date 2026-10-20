@@ -22,6 +22,7 @@ constexpr bool kEnableAttitude = true;   // Roll/pitch/yaw in degrees
 constexpr bool kEnableEkf = true;        // Quaternion + EKF gyro bias
 constexpr bool kEnablePidMixer = true;   // T/P/Q/R and FR/FL/RR/RL
 constexpr bool kEnableDShot = true;      // eRPM, commands and RX errors
+constexpr bool kEnableEscSerial = true;  // TX-pad ESC voltage/current/temp/mAh
 
 void startup_countdown(int seconds_remaining);
 void startup_complete();
