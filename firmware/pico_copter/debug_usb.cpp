@@ -199,7 +199,9 @@ void poll() {
 
     if (kEnableEscSerial) {
         const esc_serial::Snapshot esc = esc_serial::snapshot();
+#if !PICO_RP2350
         const DShotTelemetrySnapshot link = dshot_telemetry_snapshot();
+#endif
         const char* names[4] = {"FR", "FL", "RR", "RL"};
         double total_current_a = 0.0;
         unsigned fresh_count = 0;
