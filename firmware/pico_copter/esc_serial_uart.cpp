@@ -10,6 +10,7 @@
  */
 #include "esc_serial_uart.hpp"
 #include "esc_serial_stream.hpp"
+#include "esc_uart_request_policy.hpp"
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
 #include "hardware/irq.h"
@@ -60,7 +61,20 @@ int sole_motor(uint8_t mask) {
 
 void on_uart_byte(uint8_t byte, uint32_t now_us) {
     ++bytes_total;
-        if (!connected_mask) ++stray_bytes;
+#if PICO_RP2350
+    // The ESC sends TX-pad telemetry only when we set the DShot request bit.
+    // Ignore all bytes outside the outstanding request window. In particular,
+    // never misattribute unsolicited or late packets to another ESC.
+    if (!esc_uart_request_policy::in_window(
+            pending, request_started_us, now_us, kResponseTimeoutUs)) {
+        ++stray_bytes;
+        scanner.count = 0;
+        scanner.has_byte = false;
+        return;
+    }
+#else
+    if (!connected_mask) ++stray_bytes;
+#endif
 
         esc_serial_protocol::Reading reading{};
         const auto result = scanner.push(byte, now_us, reading);
@@ -75,33 +89,33 @@ void on_uart_byte(uint8_t byte, uint32_t now_us) {
         }
 
         ++plausible_frames;
+#if PICO_RP2350
+        // A KISS packet contains no source ID. Only the single outstanding,
+        // in-time request may identify this frame. Presence does NOT require
+        // any bidirectional-DShot eRPM response.
+        const bool requested = true;
+        const int owner = pending_motor;
+        pending = false;
+#else
         const bool requested = pending;
-        // A valid unsolicited frame indicates that the TX output can be
-        // streaming without DShot telemetry-request bits.
         if (!requested) {
             seen_unsolicited = true;
             last_unsolicited_us = now_us;
         }
-
         const int single = kFixedUartSourceMotor >= 0
             ? kFixedUartSourceMotor : sole_motor(connected_mask);
         int owner = -1;
         if (single >= 0) {
-            // The only detected ESC is the only attributable source.
             owner = single;
-        } else if (requested && ((connected_mask & (1u << pending_motor)) ||
-                                  kProbeWithoutBidir)) {
-            // For multiple detected ESCs, only a pending, individually
-            // requested reply is attributable. Autonomous packets are not.
-            // If autonomous traffic is active, request scheduling is paused.
+        } else if (requested && (connected_mask & (1u << pending_motor))) {
             owner = pending_motor;
         }
         if (requested) pending = false;
-
         if (owner < 0) {
             ++unassigned_frames;
             return;
         }
+#endif
         MotorState& state = motors[owner];
         if (!state.gate.accept(reading, now_us)) {
             ++state.corroborating;
@@ -146,6 +160,19 @@ void init() {
 
 void service_400hz(uint32_t now_us, uint8_t connected) {
     if (!kEnabled || !initialized) return;
+#if PICO_RP2350
+    // A connected UART motor is one that returned recent, corroborated,
+    // request-triggered TX-pad data. No bidirectional-DShot dependency.
+    (void)connected;
+    uint8_t uart_mask = 0;
+    for (unsigned i = 0; i < 4; ++i) {
+        if (esc_uart_request_policy::fresh(
+                motors[i].requested_received, motors[i].last_good_us,
+                now_us, kFreshUs))
+            uart_mask |= static_cast<uint8_t>(1u << i);
+    }
+    connected_mask = uart_mask;
+#else
     const uint8_t new_mask = connected & 0x0fu;
     if (new_mask != connected_mask) {
         // A change of connected motor(s) may change who is driving TX.
@@ -153,6 +180,7 @@ void service_400hz(uint32_t now_us, uint8_t connected) {
         for (MotorState& motor : motors) motor.gate.clear();
         connected_mask = new_mask;
     }
+#endif
     if (pending &&
         static_cast<uint32_t>(now_us - request_started_us) >= kResponseTimeoutUs) {
         ++motors[pending_motor].timeouts;
@@ -169,18 +197,28 @@ bool request_dshot_telemetry(uint8_t motor_index, uint16_t throttle,
     next_motor = static_cast<uint8_t>((next_motor + 1) % 4);
     if ((!dshot_connected && !kProbeWithoutBidir) || throttle == 0) return false;
 
-    // If valid autonomous frames are already arriving, further request
-    // bits are redundant and can collide with the auto-transmission.
-    // A 250ms absence allows request-driven fallback for Auto=Off ESCs.
+#if !PICO_RP2350
+    // Keep RP2040's existing auto-telemetry fallback unchanged.
     if (seen_unsolicited &&
         static_cast<uint32_t>(now_us - last_unsolicited_us) <= kPassiveHoldUs)
         return false;
+#endif
 
+#if PICO_RP2350
+    // Clear any partial/unrequested UART bytes before associating the next
+    // complete CRC-checked packet with the selected DShot motor.
+    const uint32_t irq_state = save_and_disable_interrupts();
+    scanner.count = 0;
+    scanner.has_byte = false;
+#endif
     pending_motor = motor_index;
     request_started_us = now_us;
     last_request_us = now_us;
     ++motors[motor_index].requests;
     pending = true;
+#if PICO_RP2350
+    restore_interrupts(irq_state);
+#endif
     return true;
 }
 
@@ -198,8 +236,12 @@ Snapshot snapshot() {
     out.unassigned_frames = unassigned_frames;
     out.gaps = scanner.gaps;
     out.connected_mask = connected_mask;
+#if PICO_RP2350
+    out.passive_active = false; // Request-driven, not autonomous streaming.
+#else
     out.passive_active = seen_unsolicited &&
         static_cast<uint32_t>(now_us - last_unsolicited_us) <= kPassiveHoldUs;
+#endif
     for (unsigned i = 0; i < 4; ++i) {
         const MotorState& m = motors[i];
         auto& dst = out.motors[i];
@@ -214,10 +256,15 @@ Snapshot snapshot() {
         dst.last_was_passive = m.last_was_passive;
         if (m.received) {
             dst.age_ms = static_cast<uint32_t>(now_us - m.last_good_us) / 1000u;
+#if PICO_RP2350
+            dst.fresh = esc_uart_request_policy::fresh(
+                m.requested_received, m.last_good_us, now_us, kFreshUs);
+#else
             dst.fresh = static_cast<uint32_t>(now_us - m.last_good_us) <= kFreshUs
                 && ((connected_mask & (1u << i)) ||
                     (kProbeWithoutBidir && m.requested_received != 0) ||
                     (kFixedUartSourceMotor == static_cast<int>(i)));
+#endif
         }
     }
     restore_interrupts(irq_state);
