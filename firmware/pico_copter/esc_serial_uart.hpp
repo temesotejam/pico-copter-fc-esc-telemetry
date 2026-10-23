@@ -14,7 +14,15 @@ constexpr uint32_t kRequestSpacingUs = 40000u;
 constexpr uint32_t kResponseTimeoutUs = 8000u;
 constexpr uint32_t kPassiveHoldUs = 250000u;
 constexpr uint32_t kFreshUs = 500000u;
+#if PICO_RP2350
+constexpr unsigned kRxGpio = 17; // independent GP17 PIO2 UART RX
+constexpr bool kProbeWithoutBidir = true; // allow UART request via one-way DShot
+constexpr int kFixedUartSourceMotor = -1; // -1: never guess unsolicited origin
+#else
 constexpr unsigned kRxGpio = 5;
+constexpr bool kProbeWithoutBidir = false;
+constexpr int kFixedUartSourceMotor = -1;
+#endif
 
 struct MotorSnapshot {
     esc_serial_protocol::Reading reading{};

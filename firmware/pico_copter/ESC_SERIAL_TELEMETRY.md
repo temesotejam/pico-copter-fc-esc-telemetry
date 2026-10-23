@@ -123,3 +123,41 @@ The supplied RL experiment log showed genuine-looking 7.7–7.8 V / 0.4 A
 packets mixed with abnormal 250 C / 74.27 V packets. Firmware build and
 host parsing tests are not proof of reliable hardware reception. Obtain
 a new log before evaluating this revision's success.
+
+
+## Pico 2 hardware variant (experimental, October 2026)
+
+The RP2040/Pico driver and its UART1 GP5 configuration remain unchanged.
+For `PICO_BOARD=pico2`, a separate `pwm_pico2.cpp` driver is selected:
+
+- SN74LVC245APWR A side=Pico2, B side=ESC; **GP18=DIR**, **GP19=/OE**.
+  An external pull-up from /OE to 3.3 V is mandatory for safe boot/reset.
+  Remove previous hardwired DIR and /OE straps before connecting MCU outputs.
+- DShot channels: GP15, GP14, GP3, GP2, GP20, GP21. Existing flight mixer
+  controls only the first four. **GP20/GP21 transmit STOP only**, not flight
+  throttle, until a six-motor mixer and failsafe are developed.
+- ESC dedicated TX-pad telemetry goes through its **own protected input**
+  to GP17 (PIO2 UART RX at 115200 8N1), **not** through the shared DIR/OE
+  transceiver. This input requires voltage compatibility / buffering as needed.
+- Pico2 defaults to one-way DShot300; unlike the RP2040 build, it can request
+  dedicated ESC TX-pad telemetry **without** eRPM/presence confirmation. It
+  requests only for nonzero motor commands, serializes requests, and never
+  gates motor output on telemetry.
+- To test the shared-SN74LVC245A **bidirectional DShot300** path, build Pico2
+  with `-DDSHOT_BIDIRECTIONAL=1`. PIO0+PIO1 motor streams and the PIO2
+  DIR/OE controller are synchronously restarted. The PIO UART receiver remains
+  continuously active. **Do not operate this mode before verifying DIR/OE
+  waveforms, signal voltage, and bus contention on a scope without ESCs.**
+  Rates other than 300 kbit/s are deliberately rejected for this experimental
+  Pico2 bidirectional controller.
+- UART TX-pad frames have no source ID. When multiple ESCs auto-transmit on
+  the same wire, frame attribution is impossible and push-pull TX connections
+  can electrically conflict. Do **not** tie unrelated TX outputs together
+  without a suitable mux/isolation and an explicit source-identification
+  scheme. `kFixedUartSourceMotor` may be configured only for a physically
+  single-source telemetry connection. Request-scoped attribution assumes
+  Auto Telemetry is off on all shared-line ESCs.
+
+These changes are **source/build checks, not hardware validation**. No flight
+with Pico2 should be attempted until protected single-ESC tests and
+six-channel timing verification have passed.

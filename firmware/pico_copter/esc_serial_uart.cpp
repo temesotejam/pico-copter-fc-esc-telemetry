@@ -14,6 +14,9 @@
 #include "hardware/uart.h"
 #include "hardware/irq.h"
 #include "hardware/sync.h"
+#if PICO_RP2350
+#include "pico2_uart_rx.hpp"
+#endif
 
 namespace esc_serial {
 namespace {
@@ -55,11 +58,8 @@ int sole_motor(uint8_t mask) {
     return -1;
 }
 
-void uart1_rx_handler() {
-    while (uart_is_readable(uart1)) {
-        const uint8_t byte = static_cast<uint8_t>(uart_getc(uart1));
-        const uint32_t now_us = time_us_32();
-        ++bytes_total;
+void on_uart_byte(uint8_t byte, uint32_t now_us) {
+    ++bytes_total;
         if (!connected_mask) ++stray_bytes;
 
         esc_serial_protocol::Reading reading{};
@@ -83,12 +83,14 @@ void uart1_rx_handler() {
             last_unsolicited_us = now_us;
         }
 
-        const int single = sole_motor(connected_mask);
+        const int single = kFixedUartSourceMotor >= 0
+            ? kFixedUartSourceMotor : sole_motor(connected_mask);
         int owner = -1;
         if (single >= 0) {
             // The only detected ESC is the only attributable source.
             owner = single;
-        } else if (requested && (connected_mask & (1u << pending_motor))) {
+        } else if (requested && ((connected_mask & (1u << pending_motor)) ||
+                                  kProbeWithoutBidir)) {
             // For multiple detected ESCs, only a pending, individually
             // requested reply is attributable. Autonomous packets are not.
             // If autonomous traffic is active, request scheduling is paused.
@@ -111,12 +113,24 @@ void uart1_rx_handler() {
         ++state.received;
         if (requested) ++state.requested_received;
         else ++state.passive_received;
+
+}
+#if !PICO_RP2350
+void uart1_rx_handler() {
+    while (uart_is_readable(uart1)) {
+        on_uart_byte(static_cast<uint8_t>(uart_getc(uart1)), time_us_32());
     }
 }
+#endif
 }  // namespace
 
 void init() {
     if (!kEnabled) return;
+#if PICO_RP2350
+    // GP17 is UART0 RX but UART0 already carries SBUS on GP1.
+    // Dedicated PIO2 UART RX avoids that peripheral conflict.
+    pico2_uart_rx::init(on_uart_byte);
+#else
     uart_init(uart1, kBaud);
     uart_set_hw_flow(uart1, false, false);
     uart_set_format(uart1, 8, 1, UART_PARITY_NONE);
@@ -126,6 +140,7 @@ void init() {
     irq_set_priority(UART1_IRQ, 0x40);
     irq_set_enabled(UART1_IRQ, true);
     uart_set_irq_enables(uart1, true, false);
+#endif
     initialized = true;
 }
 
@@ -152,7 +167,7 @@ bool request_dshot_telemetry(uint8_t motor_index, uint16_t throttle,
         static_cast<uint32_t>(now_us - last_request_us) < kRequestSpacingUs)
         return false;
     next_motor = static_cast<uint8_t>((next_motor + 1) % 4);
-    if (!dshot_connected || throttle == 0) return false;
+    if ((!dshot_connected && !kProbeWithoutBidir) || throttle == 0) return false;
 
     // If valid autonomous frames are already arriving, further request
     // bits are redundant and can collide with the auto-transmission.
@@ -200,7 +215,9 @@ Snapshot snapshot() {
         if (m.received) {
             dst.age_ms = static_cast<uint32_t>(now_us - m.last_good_us) / 1000u;
             dst.fresh = static_cast<uint32_t>(now_us - m.last_good_us) <= kFreshUs
-                && (connected_mask & (1u << i));
+                && ((connected_mask & (1u << i)) ||
+                    (kProbeWithoutBidir && m.requested_received != 0) ||
+                    (kFixedUartSourceMotor == static_cast<int>(i)));
         }
     }
     restore_interrupts(irq_state);

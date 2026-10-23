@@ -1,0 +1,38 @@
+;
+; RP2350: safe bidirectional DShot through direction-controlled SN74LVC245A.
+; The shared buffer direction is handled by a separate PIO2 state machine.
+; GPIO stays INPUT while idle/receiving, not OUTPUT after a reply.
+.program dshot_tx_pico2
+.wrap_target
+    pull block
+    set pindirs, 1
+    nop [25]                 ; align with shared /OE enable before first bit
+    set x, 15
+tx_loop:
+    set pins, 0 [14]
+    out pins, 1 [14]
+    set pins, 1 [8]
+    jmp x-- tx_loop
+    set pindirs, 0           ; release A-side BEFORE switching DIR
+    pull block
+    mov x, osr
+after_tx:
+    jmp x-- after_tx
+    set y, 7
+wait_rx_outer:
+    set x, 31
+wait_rx:
+    jmp pin rx_still_high
+    jmp start_rx
+rx_still_high:
+    jmp x-- wait_rx
+    jmp y-- wait_rx_outer
+    jmp finish_rx
+start_rx:
+    set x, 20 [8]
+rx_loop:
+    in pins, 1 [30]
+    jmp x-- rx_loop
+finish_rx:
+    push [12]
+.wrap
