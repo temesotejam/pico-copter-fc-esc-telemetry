@@ -64,14 +64,14 @@ void on_uart_byte(uint8_t byte, uint32_t now_us) {
 
         esc_serial_protocol::Reading reading{};
         const auto result = scanner.push(byte, now_us, reading);
-        if (result == esc_serial_stream::ScanResult::Partial) continue;
+        if (result == esc_serial_stream::ScanResult::Partial) return;
         if (result == esc_serial_stream::ScanResult::BadCrc) {
             ++bad_crc_windows;
-            continue;
+            return;
         }
         if (result == esc_serial_stream::ScanResult::BadRange) {
             ++bad_range_frames;
-            continue;
+            return;
         }
 
         ++plausible_frames;
@@ -100,12 +100,12 @@ void on_uart_byte(uint8_t byte, uint32_t now_us) {
 
         if (owner < 0) {
             ++unassigned_frames;
-            continue;
+            return;
         }
         MotorState& state = motors[owner];
         if (!state.gate.accept(reading, now_us)) {
             ++state.corroborating;
-            continue;
+            return;
         }
         state.reading = reading;
         state.last_good_us = now_us;
