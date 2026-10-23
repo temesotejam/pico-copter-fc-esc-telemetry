@@ -68,13 +68,20 @@ if(NOT EXISTS "${EIGEN3_INCLUDE_DIR}/Eigen/Dense")
     message(FATAL_ERROR "Eigen/Dense was not found at ${EIGEN3_INCLUDE_DIR}")
 endif()
 
+# Pico 2 uses a dedicated 6-line level-shifter-aware driver; RP2040 is unchanged.
+if(PICO_BOARD STREQUAL "pico2")
+    set(FC_MOTOR_DRIVER pwm_pico2.cpp)
+else()
+    set(FC_MOTOR_DRIVER pwm.cpp)
+endif()
+
 add_executable(pico_copter
     pico_copter.cpp
     debug_usb.cpp
     sensor.cpp
     ekf.cpp
     lsm9ds1_reg.c
-    pwm.cpp
+    ${FC_MOTOR_DRIVER}
     esc_serial_uart.cpp
     radio.cpp
     control.cpp
@@ -102,7 +109,14 @@ target_link_libraries(pico_copter PRIVATE
     pico_multicore
 )
 
-pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/dshot_tx.pio)
+if(PICO_BOARD STREQUAL "pico2")
+    target_sources(pico_copter PRIVATE pico2_uart_rx.cpp)
+    pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/dshot_tx_pico2.pio)
+    pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/pico2_shifter.pio)
+    pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/pico2_uart_rx.pio)
+else()
+    pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/dshot_tx.pio)
+endif()
 pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/dshot_oneway.pio)
 
 pico_enable_stdio_usb(pico_copter 1)

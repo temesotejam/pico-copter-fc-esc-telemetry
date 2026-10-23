@@ -1,0 +1,29 @@
+;
+; RP2350 only. SET pins are GP18=DIR (bit 0), GP19=/OE (bit 1).
+; 3=TX disabled, 1=TX enabled, 2=RX disabled, 0=RX enabled.
+; Controlled from a single PIO SM synchronized to all 6 motor SMs.
+; Tested timing must be checked with an oscilloscope before attaching ESCs.
+.program pico2_shifter
+.wrap_target
+    set pins, 3              ; ensure disabled while selecting TX
+    nop [15]
+    set pins, 1              ; enable A->B before DShot first edge
+    set x, 31
+tx_wait:
+    nop [18]
+    jmp x-- tx_wait          ; 640 cycles for 16x40-cycle DShot bits
+    nop [16]                 ; motor output already released at this point
+    set pins, 3              ; disable both sides BEFORE DIR change
+    nop [15]
+    set pins, 2              ; receive direction, still disabled
+    nop [15]
+    set pins, 0              ; B->A enabled prior to ESC response
+    set x, 31
+rx_window:
+    nop [31]
+    nop [31]
+    nop [31]
+    jmp x-- rx_window        ; generous receive window at DShot300
+    set pins, 2              ; disable output between frames
+    pull block               ; stall here; restarted next 400 Hz period
+.wrap

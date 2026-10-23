@@ -22,7 +22,11 @@
 // To change: edit just this value, rebuild, and flash the resulting UF2.
 // Alternatively pass -DDSHOT_BIDIRECTIONAL=0/1 to CMake.
 #ifndef DSHOT_BIDIRECTIONAL
-#define DSHOT_BIDIRECTIONAL 1
+#if PICO_RP2350
+#define DSHOT_BIDIRECTIONAL 0  // Pico2: safe, forward-only shifter default
+#else
+#define DSHOT_BIDIRECTIONAL 1  // Pico/RP2040: preserve original mode
+#endif
 #endif
 
 static_assert(DSHOT_BIDIRECTIONAL == 0 || DSHOT_BIDIRECTIONAL == 1,

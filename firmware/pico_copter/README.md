@@ -248,3 +248,63 @@ USBが接続されていて、CH5ログ出力中でなければ、通常のメ�
 - `tests/test_sbus.cpp`: フレーム解析、通信タイムアウト、復帰条件の単体テスト。
 
 **注意:** DShot 0の停止指令は電源遮断ではありません。受信機がフェイルセーフフラグなしで古いチャンネル値を送信し続ける場合は通信断を検出できません。プロペラを外して実機確認してください。
+
+
+## Pico 2 hardware variant (experimental, October 2026)
+
+The RP2040/Pico driver and its UART1 GP5 configuration remain unchanged.
+For `PICO_BOARD=pico2`, a separate `pwm_pico2.cpp` driver is selected:
+
+- SN74LVC245APWR A side=Pico2, B side=ESC; **GP18=DIR**, **GP19=/OE**.
+  An external pull-up from /OE to 3.3 V is mandatory for safe boot/reset.
+  Remove previous hardwired DIR and /OE straps before connecting MCU outputs.
+- DShot channels: GP15, GP14, GP3, GP2, GP20, GP21. Existing flight mixer
+  controls only the first four. **GP20/GP21 transmit STOP only**, not flight
+  throttle, until a six-motor mixer and failsafe are developed.
+- ESC dedicated TX-pad telemetry goes through its **own protected input**
+  to GP17 (PIO2 UART RX at 115200 8N1), **not** through the shared DIR/OE
+  transceiver. This input requires voltage compatibility / buffering as needed.
+- Pico2 defaults to one-way DShot300; unlike the RP2040 build, it can request
+  dedicated ESC TX-pad telemetry **without** eRPM/presence confirmation. It
+  requests only for nonzero motor commands, serializes requests, and never
+  gates motor output on telemetry.
+- To test the shared-SN74LVC245A **bidirectional DShot300** path, build Pico2
+  with `-DDSHOT_BIDIRECTIONAL=1`. PIO0+PIO1 motor streams and the PIO2
+  DIR/OE controller are synchronously restarted. The PIO UART receiver remains
+  continuously active. **Do not operate this mode before verifying DIR/OE
+  waveforms, signal voltage, and bus contention on a scope without ESCs.**
+  Rates other than 300 kbit/s are deliberately rejected for this experimental
+  Pico2 bidirectional controller.
+- UART TX-pad frames have no source ID. When multiple ESCs auto-transmit on
+  the same wire, frame attribution is impossible and push-pull TX connections
+  can electrically conflict. Do **not** tie unrelated TX outputs together
+  without a suitable mux/isolation and an explicit source-identification
+  scheme. `kFixedUartSourceMotor` may be configured only for a physically
+  single-source telemetry connection. Request-scoped attribution assumes
+  Auto Telemetry is off on all shared-line ESCs.
+
+These changes are **source/build checks, not hardware validation**. No flight
+with Pico2 should be attempted until protected single-ESC tests and
+six-channel timing verification have passed.
+
+
+### Pico 2: request-driven ESC TX telemetry (no bidirectional DShot required)
+
+The target ESC sends a dedicated TX-pad KISS UART reply when the DShot
+telemetry-request bit is set. Pico 2 therefore uses **request-only**
+telemetry: the default one-way DShot300 sends requests to one active motor
+(FR/FL/RR/RL) at a time, at least 40 ms apart. Only a complete reply
+received within the 8 ms request window may be assigned to that motor.
+Two consistent CRC-valid replies are needed before the UART data is shown
+as fresh and the ESC is marked detected. RP2350 does not use bidirectional
+DShot eRPM for this presence decision. The RP2040 path stays unchanged.
+
+GP17 receives the UART TX-pad signal through its own protected input; it
+does not pass through the common DIR/OE-controlled SN74LVC245A. GPIO20/21
+remain STOP-only until a six-motor flight mixer is implemented.
+
+**Electrical caution:** one-at-a-time DShot requests do not automatically
+make several push-pull ESC TX pins safe to wire together. Verify the ESC
+TX electrical output topology first; add per-ESC input isolation or a
+controlled multiplexer if needed. Disable unsolicited/auto ESC telemetry
+for request-window-based motor identification.

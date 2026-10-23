@@ -32,8 +32,8 @@ int main(void)
   //Initialize synchronized RAM flight recorder before enabling 400 Hz IRQ.
   flight_log_init();
 
-  // Start independent UART1 RX for BLHeli_32 dedicated TX telemetry.
-  // GPIO5 is separate from UART0 SBUS and PIO DShot.
+  // Pico/RP2040: UART1 GP5. Pico2/RP2350: independent PIO2 UART GP17.
+  // Neither reception path is flight-control feedback.
   esc_serial::init();
 
   //Initialize PWM
