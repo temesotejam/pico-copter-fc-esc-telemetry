@@ -170,6 +170,11 @@ jobs:
           g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
             firmware/pico_copter/tests/test_esc_serial_stream.cpp -o /tmp/esc-serial-stream-test
           /tmp/esc-serial-stream-test
+          g++ -std=c++17 -Wall -Wextra -Werror -DPICO_RP2350=1 \
+            -I firmware/pico_copter \
+            firmware/pico_copter/tests/test_esc_uart_request_policy.cpp \
+            -o /tmp/pico2-esc-uart-request-test
+          /tmp/pico2-esc-uart-request-test
           g++ -std=c++17 -Wall -Wextra -Werror -I firmware/pico_copter \
             firmware/pico_copter/tests/test_esc_dshot_presence.cpp -o /tmp/esc-dshot-presence-test
           /tmp/esc-dshot-presence-test
