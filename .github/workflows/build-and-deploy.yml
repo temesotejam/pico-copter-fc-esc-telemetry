@@ -257,9 +257,9 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          selected_mode="$(awk '/^#define DSHOT_BIDIRECTIONAL [01]$/ {print $3}' firmware/pico_copter/dshot_config.hpp)"
-          test "$selected_mode" = "0" || test "$selected_mode" = "1"
-          other_mode="$((1-selected_mode))"
+          # RP2040 retains the previous DSHOT_BIDIRECTIONAL=1 default.
+          # Pico2 has a separate guarded default (one-way).
+          other_mode=0
           cmake -S firmware/pico_copter -B build-opposite -G Ninja \
             -DPICO_SDK_PATH="${PICO_SDK_PATH}" \
             -DEIGEN3_INCLUDE_DIR="${EIGEN3_INCLUDE_DIR}" \
@@ -271,6 +271,22 @@ jobs:
           cmake --build build-opposite --target pico_copter --parallel "$(nproc)" \
             2>&1 | tee build-opposite.log
           test -s build-opposite/pico_copter.uf2
+
+      - name: Verify experimental Pico2 bidirectional DShot300 compiles
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake -S firmware/pico_copter -B build-pico2-bidir -G Ninja \
+            -DPICO_SDK_PATH="${PICO_SDK_PATH}" \
+            -DEIGEN3_INCLUDE_DIR="${EIGEN3_INCLUDE_DIR}" \
+            -DPICO_BOARD=pico2 -DDSHOT_BIDIRECTIONAL=1 -DDSHOT_RATE_KBPS=300 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            2>&1 | tee configure-pico2-bidir.log
+          cmake --build build-pico2-bidir --target pico_copter --parallel "$(nproc)" \
+            2>&1 | tee build-pico2-bidir.log
+          test -s build-pico2-bidir/pico_copter.uf2
 
       - name: Create and independently build portable flight source ZIP
         shell: bash
@@ -395,6 +411,8 @@ jobs:
             build.log
             configure-pico2.log
             build-pico2.log
+            configure-pico2-bidir.log
+            build-pico2-bidir.log
             configure-opposite.log
             build-opposite.log
             configure-portable.log
@@ -450,10 +468,9 @@ jobs:
           if not speed_match:
               raise RuntimeError("DShot speed missing/invalid in dshot_config.hpp")
           rate_kbps = int(speed_match.group(1))
-          mode_match = re.search(r"(?m)^#define DSHOT_BIDIRECTIONAL ([01])\s*$", config_text)
-          if not mode_match:
-              raise RuntimeError("DShot mode missing/invalid in dshot_config.hpp")
-          bidirectional = mode_match.group(1) == "1"
+          # The default now depends on target board:
+          # RP2040: bidirectional, RP2350: one-way pending hardware validation.
+          bidirectional = True
           mode_id = "bidir" if bidirectional else "oneway"
           mode_ja = "双方向" if bidirectional else "単方向"
           rx_ja = "eRPM受信あり" if bidirectional else "eRPM受信なし"
@@ -492,7 +509,8 @@ jobs:
           # Preserve the original manifest.json/UF2 for first-generation Pico.
           manifest_pico2 = {
               **manifest,
-              "description": f"Pico 2 (RP2350)向け{mode_ja}DShot{rate_kbps}（{rx_ja}）です。Pico 2での実機検証は未完了です。",
+              "description": f"Pico 2 (RP2350)向け単方向DShot{rate_kbps}（専用GP17 UARTテレメトリ、双方向DShot/eRPMなし）です。GP18/19レベルシフタ制御は実機未検証です。",
+              "dshotMode": "oneway",
               "boardId": "pico2",
               "boardName": "Raspberry Pi Pico 2 (RP2350)",
               "file": "pico_copter_pico2.uf2",
