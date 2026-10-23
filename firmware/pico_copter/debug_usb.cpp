@@ -209,12 +209,19 @@ void poll() {
                 total_current_a += m.reading.current_centiamp / 100.0;
                 ++fresh_count;
             }
+            // Pico2's ESC presence is validated by requested UART packets,
+            // not by the DShot signal wire's optional eRPM reply.
+#if PICO_RP2350
+            const bool detected = m.fresh;
+#else
+            const bool detected = link.motors[i].fresh;
+#endif
             // Never present stale measurements as valid.
             printf("#ESC_UART %s detected=%u valid=%u temp_c=%ld voltage_v=%.2f "
                    "current_a=%.2f consumed_mah=%ld erpm=%ld "
                    "age_ms=%ld requests=%lu rx=%lu auto_rx=%lu req_rx=%lu "
                    "confirm=%lu timeout=%lu src=%s\n",
-                   names[i], link.motors[i].fresh ? 1u : 0u,
+                   names[i], detected ? 1u : 0u,
                    m.fresh ? 1u : 0u,
                    m.fresh ? static_cast<long>(m.reading.temperature_c) : -1L,
                    m.fresh ? m.reading.voltage_centivolt / 100.0 : -1.0,
@@ -235,7 +242,11 @@ void poll() {
                "mode=%s mask=0x%02x bytes=%lu plausible=%lu crc_windows=%lu "
                "range_reject=%lu unassigned=%lu gaps=%lu no_esc_bytes=%lu\n",
                total_current_a, fresh_count, esc.enabled ? 1u : 0u,
+#if PICO_RP2350
+               "request",
+#else
                esc.passive_active ? "stream" : "poll_or_wait",
+#endif
                static_cast<unsigned int>(esc.connected_mask),
                static_cast<unsigned long>(esc.bytes_total),
                static_cast<unsigned long>(esc.plausible_frames),
