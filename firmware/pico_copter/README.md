@@ -286,3 +286,25 @@ For `PICO_BOARD=pico2`, a separate `pwm_pico2.cpp` driver is selected:
 These changes are **source/build checks, not hardware validation**. No flight
 with Pico2 should be attempted until protected single-ESC tests and
 six-channel timing verification have passed.
+
+
+### Pico 2: request-driven ESC TX telemetry (no bidirectional DShot required)
+
+The target ESC sends a dedicated TX-pad KISS UART reply when the DShot
+telemetry-request bit is set. Pico 2 therefore uses **request-only**
+telemetry: the default one-way DShot300 sends requests to one active motor
+(FR/FL/RR/RL) at a time, at least 40 ms apart. Only a complete reply
+received within the 8 ms request window may be assigned to that motor.
+Two consistent CRC-valid replies are needed before the UART data is shown
+as fresh and the ESC is marked detected. RP2350 does not use bidirectional
+DShot eRPM for this presence decision. The RP2040 path stays unchanged.
+
+GP17 receives the UART TX-pad signal through its own protected input; it
+does not pass through the common DIR/OE-controlled SN74LVC245A. GPIO20/21
+remain STOP-only until a six-motor flight mixer is implemented.
+
+**Electrical caution:** one-at-a-time DShot requests do not automatically
+make several push-pull ESC TX pins safe to wire together. Verify the ESC
+TX electrical output topology first; add per-ESC input isolation or a
+controlled multiplexer if needed. Disable unsolicited/auto ESC telemetry
+for request-window-based motor identification.
