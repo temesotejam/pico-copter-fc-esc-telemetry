@@ -255,7 +255,8 @@ USBが接続されていて、CH5ログ出力中でなければ、通常のメ�
 The RP2040/Pico driver and its UART1 GP5 configuration remain unchanged.
 For `PICO_BOARD=pico2`, a separate `pwm_pico2.cpp` driver is selected:
 
-- SN74LVC245APWR A side=Pico2, B side=ESC; **GP18=DIR**, **GP19=/OE**.
+- SN74LVC245APWR A side=Pico2, B side=ESC; **GP16=DIR (IC pin 1)**, **GP18=/OE (IC pin 19)**.
+  Because these GPIOs are nonadjacent, bidirectional PIO uses SET for DIR and side-set for /OE. The ESC TX-pad receiver remains on GP17.
   An external pull-up from /OE to 3.3 V is mandatory for safe boot/reset.
   Remove previous hardwired DIR and /OE straps before connecting MCU outputs.
 - DShot channels: GP15, GP14, GP3, GP2, GP20, GP21. Existing flight mixer
