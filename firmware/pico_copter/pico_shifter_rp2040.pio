@@ -1,5 +1,5 @@
 ;
-; RP2350, SN74LVC245A: GP16=DIR (IC pin 1), GP18=/OE (IC pin 19).
+; RP2040, SN74LVC245A: GP16=DIR (IC pin 1), GP18=/OE (IC pin 19).
 ; GP16 and GP18 are NOT adjacent: SET controls DIR and side-set controls /OE.
 ; DIR=1: Pico A -> ESC B; DIR=0: ESC B -> Pico A.
 ; /OE=1: outputs disabled (Hi-Z); /OE=0: enabled.
