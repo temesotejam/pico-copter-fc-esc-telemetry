@@ -1,80 +1,79 @@
-# Pico 2 Copter FC — 双方向DShot300・ESCテレメトリ
+# Pico Copter FC — 共通基板対応・双方向DShot300・ESC UART
 
-**このリポジトリは、2026-10-27に実機通信を確認した Raspberry Pi Pico 2（RP2350）＋SN74LVC245A構成専用です。** 初代Pico（RP2040）用UF2は配布しません。ファームウェアの標準設定は**双方向DShot300**です。
+**このリポジトリは同一回路を Raspberry Pi Pico（RP2040）と Pico 2（RP2350）の両方で使用するためのファームウェアです。** ピン配置は共通で、GP16がSN74LVC245AのDIR、GP18が/OE、GP17がESC専用TXテレメトリです。両機種ともデフォルトは**双方向DShot300**です。
 
-[**Pico 2用UF2／ソースZIP配布ページ**](https://temesotejam.github.io/pico-copter-fc-esc-telemetry/) ｜ [ファームウェア／ビルド詳細](firmware/pico_copter/README.md) ｜ [ESCテレメトリ・配線仕様](firmware/pico_copter/ESC_SERIAL_TELEMETRY.md)
+**[UF2・ソースZIP配布ページ](https://temesotejam.github.io/pico-copter-fc-esc-telemetry/)** ｜ [ファームウェア／ビルド詳細](firmware/pico_copter/README.md) ｜ [配線・テレメトリ仕様](firmware/pico_copter/ESC_SERIAL_TELEMETRY.md)
 
-## 今回の構成
+## 対応状況
 
-| 機能 | 実装 |
-|---|---|
-| 対象ボード | **Raspberry Pi Pico 2（RP2350）** |
-| モータ制御 | **双方向DShot300、400 Hzで更新** |
-| 姿勢推定・制御 | LSM9DS1＋EKF／PID、姿勢制御100 Hz |
-| 受信機 | SBUS（UART0 RX: GP1、100000 bps、8E2） |
-| eRPM | 各DShot信号線でESC返信を受信 |
-| 追加テレメトリ | **ESC専用TXパッド → GP17**（PIO2 UART RX、115200 bps／8N1） |
-| レベルシフタ | **SN74LVC245A、GP16=DIR（IC 1番ピン）、GP18=/OE（IC 19番ピン）** |
-| 飛行制御のモータ数 | **4基**（FR/FL/RR/RL） |
-| 追加DShot 2回線 | GP20/21は常時**DShot 0（STOP）**。6基飛行制御は未実装 |
-| 診断 | USBシリアル（`#DShot300`、`#ESC_UART` など）、CH5の100 Hz・38項目RAMログ |
+| 項目 | Pico（RP2040） | Pico 2（RP2350） |
+|---|---|---|
+| 共通基板／同じ接続先 | 対応するように実装（**実機未確認**） | **2026-10-27実機通信確認済み** |
+| DShotモード | 双方向DShot300 | 双方向DShot300 |
+| 4基のFCモータ指令 | GP15 / GP14 / GP3 / GP2 | GP15 / GP14 / GP3 / GP2 |
+| 追加GP20/21 | **入力＋弱プルダウン（DShotなし）** | **DShot 0（STOP）送信** |
+| ESC専用TXパッド受信 | GP17・PIO1 | GP17・PIO2 |
+| SN74LVC245A DIR、/OE | GP16、GP18・PIO1 | GP16、GP18・PIO2 |
+| DShotのPIO | PIO0：4チャンネル | PIO0/PIO1：6チャンネル |
+| PIO間同期 | **CPU順次起動・要波形検証** | PIOハードウェア同期 |
+| 制御／姿勢ループ | 400 Hz／100 Hz | 400 Hz／100 Hz |
 
-### Pico 2のGPIO配線
+**両機種とも姿勢制御・モータミキサは4基用です。** Pico 2ではGP20/GP21へSTOP指令を出しますが、初代PicoはこれらのピンからDShotを送信しません。追加2基のESCを使用する場合、初代Picoでの動作は保証されません。6基飛行制御は未実装です。
 
-| 接続先 | GPIO | Pico 2の物理ピン |
+### 共通GPIO配置
+
+| 役割 | GPIO | 物理ピン |
 |---|---:|---:|
-| Rear Left（RL）、DShot | 2 | 4 |
-| Rear Right（RR）、DShot | 3 | 5 |
-| Front Left（FL）、DShot | 14 | 19 |
-| Front Right（FR）、DShot | 15 | 20 |
-| 追加DShot（STOP固定） | 20、21 | 26、27 |
-| サーボ（PWM） | 6 | 9 |
-| SBUS受信 | 1 | 2 |
-| ESC専用TXテレメトリ受信 | **17** | **22** |
-| SN74LVC245A DIR（IC 1番ピン） | **16** | **21** |
-| SN74LVC245A /OE（IC 19番ピン） | **18** | **24** |
+| Rear Left（RL）DShot | GP2 | 4 |
+| Rear Right（RR）DShot | GP3 | 5 |
+| Front Left（FL）DShot | GP14 | 19 |
+| Front Right（FR）DShot | GP15 | 20 |
+| 追加DShot 5/6 | GP20 / GP21 | 26 / 27 |
+| **SN74LVC245A 1番ピン DIR** | **GP16** | **21** |
+| **ESC専用TXテレメトリ RX** | **GP17** | **22** |
+| **SN74LVC245A 19番ピン /OE** | **GP18** | **24** |
+| SBUS受信（UART0） | GP1 | 2 |
+| サーボPWM | GP6 | 9 |
 
-SN74LVC245Aは**A側＝Pico 2、B側＝ESC**を想定します。GP16とGP18は隣接しないため、PIOのSET／side-setを使って送信と受信の方向を切り替えます。**/OEに3.3 Vへの外付けプルアップが必要**です（起動・リセット中はHi-Zに保つ）。固定DIR・/OE配線を残したままGPIOから駆動しないでください。
+SN74LVC245Aは**A側＝マイコン、B側＝ESC**として使用します。**/OE（GP18）に3.3 Vへの外付けプルアップを設け、リセット中は必ず出力無効（Hi-Z）**にしてください。DIRと/OEの固定配線があれば取り外します。
 
-**ESCの専用TXパッドはGP17の別の保護入力へ接続**し、共有DIR/OEレベルシフタを通しません。GPIOは5 V非対応です。**複数のESCのTX出力を仕様未確認のまま直結しないでください。** 必要なら個別バッファやマルチプレクサを使ってください。
+ESC専用TX（GP17）はSN74LVC245Aの共通DIR/OE回路ではなく、**電圧が3.3 V GPIOに適合する別の受信回路**を介します。複数ESCのTX出力を無条件に直結しないでください。必要ならバッファやマルチプレクサを使います。
 
-## DShot返信と専用UARTの違い
+## DShotとUARTテレメトリ
 
-- **双方向DShot：** 各モータの制御線からeRPMを取得（同じ信号線を送受信に使用）。返信が欠けてもDShot指令の更新は継続します。
-- **専用UART：** ESCのTXパッドから温度・電圧・電流・消費mAh・eRPMを取得。Pico 2では推力指令が0でないESCへDShot要求ビットを順番に付け、**40 ms以上の要求間隔、8 msの返信受付窓**でフレームをそのESCに対応付けます。最初の値は整合性確認を行い、古い値は無効にします。ESCの自動送信（Auto Telemetry）は**OFF**を想定しています。
+**DShotの返信**は制御線を送信後に受信へ切り替えて、各モータのeRPMを取得します。一方、**ESC専用TXテレメトリ**はGP17で115200 bps／8N1の10バイトKISSパケットを取得します（温度、電圧、電流、mAh、eRPM）。両機種とも**DShotテレメトリ要求ビットを順番に送信する方式**です。要求間隔40 ms以上、受信待ち8 ms、古い測定値は500 msで無効になります。ESC側のAuto TelemetryはOFFが前提です。
 
-いずれのテレメトリも**診断用**で、PID/EKFやフェイルセーフの制御入力としては使用していません。USB出力の`#DShot300`と`#ESC_UART`を区別してください。電源の抜き差しを含む累積`rx/tx`の比率は通信中の成功率ではありません。接続中のカウンタ差分を比較してください。
+いずれもUSB診断用であり、PID/EKFやモータ出力フィードバックには使いません。`#DShot300`と`#ESC_UART`ログを区別してください。電源の抜き差しを行うと累積受信成功率は下がるので、接続中のカウンタ差分で評価してください。
 
-## 実機確認・固定保存版
+## 実機試験と保存版
 
-**2026-10-27：Pico 2＋SN74LVC245Aで4系統同時の双方向DShot300返信、およびGP17のESC専用UARTテレメトリをベンチ試験で取得しました。** ESC電源を切った際には返信が途絶え、再接続後に取得できることを確認しています。今回の結果は通信機能の検証であり、**飛行安定性・6基飛行・信号の電気的安全性を保証するものではありません**。
+- **2026-10-27：Pico 2（RP2350）＋SN74LVC245Aで、4基同時の双方向DShot300返信とGP17のUARTテレメトリを実機確認。** ベンチ試験であり、飛行安定性や全電気条件の安全性の検証ではありません。
+- **Pico（RP2040）＋同じレベルシフタ回路：本ブランチで実装した対応は、ビルド確認と実機波形検証が必要です。** PIO0とPIO1間で完全なハードウェア同時起動はできず、タイミング余裕を調整した新しい`pico_shifter_rp2040.pio`を使用します。ESC接続前にGP16/18とDShotの切り替え波形・バス競合をオシロスコープで確認してください。
+- **[Pico 2動作成功版を固定保存したブランチ](https://github.com/temesotejam/pico-copter-fc-esc-telemetry/tree/archive/pico2-bidir-dshot300-uart-gp17-working-20261027)**（コミット`70ef5e610d017eea354c6ea3d0f266ea5b14f5d2`）は変更していません。
 
-[**実機動作成功版（固定ブランチ）**](https://github.com/temesotejam/pico-copter-fc-esc-telemetry/tree/archive/pico2-bidir-dshot300-uart-gp17-working-20261027) （コミット `70ef5e610d017eea354c6ea3d0f266ea5b14f5d2`）。このブランチは`main`の更新では変わりません。
+## UF2配布・書き込み
 
-## UF2の書き込み
+[配布ページ](https://temesotejam.github.io/pico-copter-fc-esc-telemetry/)で**PicoとPico 2を選択**し、それぞれのUF2を取得します。
 
-1. [配布ページ](https://temesotejam.github.io/pico-copter-fc-esc-telemetry/)から**Pico 2用**UF2を取得します。
-2. プロペラを取り外し、Pico 2の**BOOTSEL**を押しながらUSB接続します。
-3. 表示されたUSBドライブへUF2をコピーします。再起動後にUSBシリアルで`#DShot CONFIG rate=300 kbps mode=bidir control=400Hz`を確認します。
-4. まずESC 1基でSTOP、DShot返信、GP17 UART、SBUSフェイルセーフを確認してください。信号レベルとGP16・GP18の切替はオシロスコープでの検証を推奨します。
+1. プロペラを外し、対象ボードの**BOOTSEL**を押しながらUSB接続します。
+2. 対応するUF2をUSBドライブへコピーします。
+3. 再起動後、USBシリアルで`#DShot CONFIG rate=300 kbps mode=bidir control=400Hz`を確認します。
+4. 最初はESC 1基でSTOP、モータ対応、双方向返信、GP17 UARTおよびSBUS通信断を確認します。
 
-**これは飛行試験済みのリリースではありません。** /OEの初期無効化、電圧・信号方向の確認、プロペラなしの試験が必要です。
+## 開発とローカルビルド
 
-## 開発・ビルド
-
-ファームウェアは`firmware/pico_copter/`にあります。GitHub Actionsは**Pico 2用UF2と持ち出し用のソースZIPのみを配布**します。別環境でコンパイルする場合は Pico SDK 2.3.0、ARM GCC、CMake、Eigen 3.4.0 が必要です（配布ZIPにはEigenヘッダ同梱）。
+`firmware/pico_copter/`がビルド可能なCMakeプロジェクトです。Pico SDK 2.3.0、ARM GCC、CMake、Eigen 3.4.0を使用します。配布ZIPにはEigenヘッダが含まれます。
 
 ```bash
-cmake -S firmware/pico_copter -B build-pico2 -G Ninja \
-  -DPICO_SDK_PATH=/path/to/pico-sdk -DPICO_BOARD=pico2 \
-  -DCMAKE_BUILD_TYPE=Release
+# Pico（RP2040）
+cmake -S firmware/pico_copter -B build-pico -G Ninja -DPICO_SDK_PATH=/path/to/pico-sdk -DPICO_BOARD=pico
+cmake --build build-pico --parallel
+
+# Pico 2（RP2350）
+cmake -S firmware/pico_copter -B build-pico2 -G Ninja -DPICO_SDK_PATH=/path/to/pico-sdk -DPICO_BOARD=pico2
 cmake --build build-pico2 --parallel
-# build-pico2/pico_copter.uf2
 ```
 
-- [ファームウェアの構造・設定方法](firmware/pico_copter/README.md)
-- [配線・テレメトリ解析・安全上の注意](firmware/pico_copter/ESC_SERIAL_TELEMETRY.md)
-- [GitHub Actions](.github/workflows/build-and-deploy.yml)
-- [任意：Arduino UNO R3向けBLHeli設定用インターフェース準備](https://temesotejam.github.io/pico-copter-fc-esc-telemetry/uno-flasher.html)
+標準は双方向DShot300。機種ごとのPIO実装は`pwm_pico_rp2040.cpp`／`pwm_pico2.cpp`で分岐します。USB出力・姿勢制御・SBUSの安全処理・100 Hz／38項目のCH5 RAMログは共通です。
 
-ベースは`temesotejam/pico-copter-fc`および`pico-copter-uf2-builder`で、PID・配線・SBUS等は`i-26`を参考にしています。元の4基の姿勢制御、SBUS復帰処理、CH5リングログは維持しています。
+[GPIO・プログラム内部の詳細](firmware/pico_copter/README.md) ｜ [電気的な注意事項](firmware/pico_copter/ESC_SERIAL_TELEMETRY.md) ｜ [任意：Arduino UNO R3のBLHeli設定用インターフェース書き込み](https://temesotejam.github.io/pico-copter-fc-esc-telemetry/uno-flasher.html)
