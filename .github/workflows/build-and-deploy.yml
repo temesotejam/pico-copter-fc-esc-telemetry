@@ -317,8 +317,9 @@ jobs:
               if item.is_file() and (item.suffix in permitted or item.name in fixed):
                   shutil.copy2(item, stage / item.name)
                   copied.append(item.name)
-          for required in ("CMakeLists.txt", "pico_copter.cpp", "pwm.cpp",
-                           "dshot_config.hpp", "dshot_oneway.pio", "dshot_tx.pio",
+          for required in ("CMakeLists.txt", "pico_copter.cpp", "pwm_pico_rp2040.cpp", "pwm_pico2.cpp",
+                           "pico_shifter_rp2040.pio", "pico2_shifter.pio", "pico2_uart_rx.cpp",
+                           "pico2_uart_rx.pio", "dshot_tx_pico2.pio", "dshot_config.hpp",
                            "DSHOT_UPSTREAM_LICENSE.txt"):
               assert required in copied, f"Missing portable flight source: {required}"
 
@@ -354,6 +355,8 @@ jobs:
           UF2 output: build/pico_copter.uf2
 
           For Pico 2: use -DPICO_BOARD=pico2 and a separate build directory.
+          Both builds target the same GP16/17/18 wiring. RP2040 cross-PIO
+          switching is still experimental and requires oscilloscope validation.
           For faster repeated gain changes: keep the 'build' directory,
           rerun only 'cmake --build build --parallel'; do not delete build.
           Edit PID gains in control.cpp, DShot rate/mode in dshot_config.hpp,
@@ -474,7 +477,7 @@ jobs:
               raise RuntimeError("DShot speed missing/invalid in dshot_config.hpp")
           rate_kbps = int(speed_match.group(1))
           # The default now depends on target board:
-          # RP2040 and RP2350 default to bidirectional DShot300. Pico2 still needs hardware validation.
+          # Both boards default to bidirectional DShot300; Pico2 bench-tested, Pico shared board unverified.
           bidirectional = True
           mode_id = "bidir" if bidirectional else "oneway"
           mode_ja = "双方向" if bidirectional else "単方向"
@@ -485,7 +488,7 @@ jobs:
               "appName": "Pico Copter",
               "dshotRateKbps": rate_kbps,
               "dshotMode": mode_id,
-              "description": f"Raspberry Pi Pico (RP2040) 用の{mode_ja}DShot{rate_kbps}（{rx_ja}）です。",
+              "description": f"Pico (RP2040) 共通基板版：{mode_ja}DShot{rate_kbps}、DIR=GP16、/OE=GP18、GP17 UART。PIO間の切替タイミングは実機未検証です。",
               "boardId": "pico",
               "boardName": "Raspberry Pi Pico",
               "file": "pico_copter.uf2",
@@ -514,7 +517,7 @@ jobs:
           # Preserve the original manifest.json/UF2 for first-generation Pico.
           manifest_pico2 = {
               **manifest,
-              "description": f"Pico 2 (RP2350)向け双方向DShot{rate_kbps}（DShot eRPM返信と専用GP17 UARTテレメトリ）です。GP16(DIR)/GP18(/OE)レベルシフタ制御は実機未検証です。",
+              "description": f"Pico 2 (RP2350) 共通基板版：双方向DShot{rate_kbps}、DIR=GP16、/OE=GP18、GP17 UART。2026-10-27のベンチ通信試験で4基同時の返信取得を確認。飛行未検証です。",
               "dshotMode": "bidir",
               "boardId": "pico2",
               "boardName": "Raspberry Pi Pico 2 (RP2350)",
