@@ -140,12 +140,11 @@ For `PICO_BOARD=pico2`, a separate `pwm_pico2.cpp` driver is selected:
 - ESC dedicated TX-pad telemetry goes through its **own protected input**
   to GP17 (PIO2 UART RX at 115200 8N1), **not** through the shared DIR/OE
   transceiver. This input requires voltage compatibility / buffering as needed.
-- Pico2 defaults to one-way DShot300; unlike the RP2040 build, it can request
+- Pico2 now defaults to experimental bidirectional DShot300; unlike the RP2040 build, it can request
   dedicated ESC TX-pad telemetry **without** eRPM/presence confirmation. It
   requests only for nonzero motor commands, serializes requests, and never
   gates motor output on telemetry.
-- To test the shared-SN74LVC245A **bidirectional DShot300** path, build Pico2
-  with `-DDSHOT_BIDIRECTIONAL=1`. PIO0+PIO1 motor streams and the PIO2
+- The shared-SN74LVC245A **bidirectional DShot300** path is the Pico2 default (`DSHOT_BIDIRECTIONAL=1`). PIO0+PIO1 motor streams and the PIO2
   DIR/OE controller are synchronously restarted. The PIO UART receiver remains
   continuously active. **Do not operate this mode before verifying DIR/OE
   waveforms, signal voltage, and bus contention on a scope without ESCs.**
@@ -164,16 +163,16 @@ with Pico2 should be attempted until protected single-ESC tests and
 six-channel timing verification have passed.
 
 
-### Pico 2: request-driven ESC TX telemetry (no bidirectional DShot required)
+### Pico 2: bidirectional DShot300 and request-driven ESC TX telemetry
 
 The target ESC sends a dedicated TX-pad KISS UART reply when the DShot
 telemetry-request bit is set. Pico 2 therefore uses **request-only**
-telemetry: the default one-way DShot300 sends requests to one active motor
+telemetry: the default bidirectional DShot300 sends requests to one active motor
 (FR/FL/RR/RL) at a time, at least 40 ms apart. Only a complete reply
 received within the 8 ms request window may be assigned to that motor.
 Two consistent CRC-valid replies are needed before the UART data is shown
-as fresh and the ESC is marked detected. RP2350 does not use bidirectional
-DShot eRPM for this presence decision. The RP2040 path stays unchanged.
+as fresh and the ESC is marked detected. RP2350 does not depend on bidirectional
+DShot eRPM for UART telemetry presence; eRPM is independently reported. The RP2040 path stays unchanged.
 
 GP17 receives the UART TX-pad signal through its own protected input; it
 does not pass through the common DIR/OE-controlled SN74LVC245A. GPIO20/21
