@@ -199,7 +199,7 @@ void poll() {
 
     if (kEnableEscSerial) {
         const esc_serial::Snapshot esc = esc_serial::snapshot();
-#if !PICO_RP2350
+#if !FC_SHARED_ESC_UART
         const DShotTelemetrySnapshot link = dshot_telemetry_snapshot();
 #endif
         const char* names[4] = {"FR", "FL", "RR", "RL"};
@@ -213,7 +213,7 @@ void poll() {
             }
             // Pico2's ESC presence is validated by requested UART packets,
             // not by the DShot signal wire's optional eRPM reply.
-#if PICO_RP2350
+#if FC_SHARED_ESC_UART
             const bool detected = m.fresh;
 #else
             const bool detected = link.motors[i].fresh;
@@ -244,7 +244,7 @@ void poll() {
                "mode=%s mask=0x%02x bytes=%lu plausible=%lu crc_windows=%lu "
                "range_reject=%lu unassigned=%lu gaps=%lu no_esc_bytes=%lu\n",
                total_current_a, fresh_count, esc.enabled ? 1u : 0u,
-#if PICO_RP2350
+#if FC_SHARED_ESC_UART
                "request",
 #else
                esc.passive_active ? "stream" : "poll_or_wait",
