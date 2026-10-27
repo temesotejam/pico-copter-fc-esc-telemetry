@@ -514,7 +514,7 @@ jobs:
           # Preserve the original manifest.json/UF2 for first-generation Pico.
           manifest_pico2 = {
               **manifest,
-              "description": f"Pico 2 (RP2350)向け単方向DShot{rate_kbps}（専用GP17 UARTテレメトリ、双方向DShot/eRPMなし）です。GP18/19レベルシフタ制御は実機未検証です。",
+              "description": f"Pico 2 (RP2350)向け単方向DShot{rate_kbps}（専用GP17 UARTテレメトリ、双方向DShot/eRPMなし）です。GP16(DIR)/GP18(/OE)レベルシフタ制御は実機未検証です。",
               "dshotMode": "oneway",
               "boardId": "pico2",
               "boardName": "Raspberry Pi Pico 2 (RP2350)",
