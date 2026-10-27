@@ -23,7 +23,7 @@
 // Alternatively pass -DDSHOT_BIDIRECTIONAL=0/1 to CMake.
 #ifndef DSHOT_BIDIRECTIONAL
 #if PICO_RP2350
-#define DSHOT_BIDIRECTIONAL 0  // Pico2: safe, forward-only shifter default
+#define DSHOT_BIDIRECTIONAL 1  // Pico2: experimental bidirectional DShot300, shifter GP16/GP18
 #else
 #define DSHOT_BIDIRECTIONAL 1  // Pico/RP2040: preserve original mode
 #endif
