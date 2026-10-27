@@ -23,7 +23,7 @@
 static_assert(!PICO_RP2350, "pwm_pico_rp2040.cpp is only for RP2040.");
 #if DSHOT_BIDIRECTIONAL
 static_assert(DSHOT_RATE_KBPS == 300,
-    "Pico2 level-shifter bidirectional synchronizer currently supports DShot300 only.");
+    "RP2040 level-shifter bidirectional controller supports DShot300 only.");
 #endif
 
 uint8_t ESC_calib = 0;
