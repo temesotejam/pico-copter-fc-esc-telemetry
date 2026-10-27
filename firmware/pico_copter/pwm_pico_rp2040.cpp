@@ -20,7 +20,7 @@
 #include "hardware/irq.h"
 #include "hardware/sync.h"
 
-static_assert(!PICO_RP2350, "pwm_pico_rp2040.cpp is only for RP2040.");
+static_assert(PICO_RP2040, "pwm_pico_rp2040.cpp is only for RP2040.");
 #if DSHOT_BIDIRECTIONAL
 static_assert(DSHOT_RATE_KBPS == 300,
     "RP2040 level-shifter bidirectional controller supports DShot300 only.");
