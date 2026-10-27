@@ -1,12 +1,8 @@
 /*
- * Continuous, nonblocking BLHeli_32 TX-pad UART telemetry at 115200/8N1.
- * Some ESC firmware autonomously transmits ~10-byte frames every ~32ms.
- * Do NOT reset packet phase when requesting DShot data; scan every byte.
- *
- * Source attribution: only one bidir-DShot-detected ESC -> passive UART
- * frames can safely be assigned. Multiple detected ESCs -> unsolicited
- * packets cannot be assigned to a motor (no address in KISS frame).
- * Never change flight-control outputs/arming/failsafe based on UART data.
+ * Request-driven BLHeli_32 TX-pad UART telemetry on GP17, 115200/8N1.
+ * Shared by RP2040 and RP2350 using the same board wiring.
+ * KISS packets carry no motor ID: only associate packets with a pending
+ * DShot telemetry request in its response window. No flight feedback.
  */
 #include "esc_serial_uart.hpp"
 #include "esc_serial_stream.hpp"
@@ -15,7 +11,7 @@
 #include "hardware/uart.h"
 #include "hardware/irq.h"
 #include "hardware/sync.h"
-#if PICO_RP2350
+#if FC_SHARED_ESC_UART
 #include "pico2_uart_rx.hpp"
 #endif
 
@@ -61,7 +57,7 @@ int sole_motor(uint8_t mask) {
 
 void on_uart_byte(uint8_t byte, uint32_t now_us) {
     ++bytes_total;
-#if PICO_RP2350
+#if FC_SHARED_ESC_UART
     // The ESC sends TX-pad telemetry only when we set the DShot request bit.
     // Ignore all bytes outside the outstanding request window. In particular,
     // never misattribute unsolicited or late packets to another ESC.
@@ -89,7 +85,7 @@ void on_uart_byte(uint8_t byte, uint32_t now_us) {
         }
 
         ++plausible_frames;
-#if PICO_RP2350
+#if FC_SHARED_ESC_UART
         // A KISS packet contains no source ID. Only the single outstanding,
         // in-time request may identify this frame. Presence does NOT require
         // any bidirectional-DShot eRPM response.
@@ -129,7 +125,7 @@ void on_uart_byte(uint8_t byte, uint32_t now_us) {
         else ++state.passive_received;
 
 }
-#if !PICO_RP2350
+#if !FC_SHARED_ESC_UART
 void uart1_rx_handler() {
     while (uart_is_readable(uart1)) {
         on_uart_byte(static_cast<uint8_t>(uart_getc(uart1)), time_us_32());
@@ -140,9 +136,9 @@ void uart1_rx_handler() {
 
 void init() {
     if (!kEnabled) return;
-#if PICO_RP2350
-    // GP17 is UART0 RX but UART0 already carries SBUS on GP1.
-    // Dedicated PIO2 UART RX avoids that peripheral conflict.
+#if FC_SHARED_ESC_UART
+    // GP17 uses a dedicated PIO UART on both chips (PIO1 for Pico,
+    // PIO2 for Pico2), leaving UART0 free for SBUS GP1.
     pico2_uart_rx::init(on_uart_byte);
 #else
     uart_init(uart1, kBaud);
@@ -160,7 +156,7 @@ void init() {
 
 void service_400hz(uint32_t now_us, uint8_t connected) {
     if (!kEnabled || !initialized) return;
-#if PICO_RP2350
+#if FC_SHARED_ESC_UART
     // A connected UART motor is one that returned recent, corroborated,
     // request-triggered TX-pad data. No bidirectional-DShot dependency.
     (void)connected;
@@ -197,14 +193,14 @@ bool request_dshot_telemetry(uint8_t motor_index, uint16_t throttle,
     next_motor = static_cast<uint8_t>((next_motor + 1) % 4);
     if ((!dshot_connected && !kProbeWithoutBidir) || throttle == 0) return false;
 
-#if !PICO_RP2350
+#if !FC_SHARED_ESC_UART
     // Keep RP2040's existing auto-telemetry fallback unchanged.
     if (seen_unsolicited &&
         static_cast<uint32_t>(now_us - last_unsolicited_us) <= kPassiveHoldUs)
         return false;
 #endif
 
-#if PICO_RP2350
+#if FC_SHARED_ESC_UART
     // Clear any partial/unrequested UART bytes before associating the next
     // complete CRC-checked packet with the selected DShot motor.
     const uint32_t irq_state = save_and_disable_interrupts();
@@ -216,7 +212,7 @@ bool request_dshot_telemetry(uint8_t motor_index, uint16_t throttle,
     last_request_us = now_us;
     ++motors[motor_index].requests;
     pending = true;
-#if PICO_RP2350
+#if FC_SHARED_ESC_UART
     restore_interrupts(irq_state);
 #endif
     return true;
@@ -236,7 +232,7 @@ Snapshot snapshot() {
     out.unassigned_frames = unassigned_frames;
     out.gaps = scanner.gaps;
     out.connected_mask = connected_mask;
-#if PICO_RP2350
+#if FC_SHARED_ESC_UART
     out.passive_active = false; // Request-driven, not autonomous streaming.
 #else
     out.passive_active = seen_unsolicited &&
@@ -256,7 +252,7 @@ Snapshot snapshot() {
         dst.last_was_passive = m.last_was_passive;
         if (m.received) {
             dst.age_ms = static_cast<uint32_t>(now_us - m.last_good_us) / 1000u;
-#if PICO_RP2350
+#if FC_SHARED_ESC_UART
             dst.fresh = esc_uart_request_policy::fresh(
                 m.requested_received, m.last_good_us, now_us, kFreshUs);
 #else
