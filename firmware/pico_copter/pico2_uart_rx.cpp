@@ -1,5 +1,5 @@
 #include "pico2_uart_rx.hpp"
-#if PICO_RP2350
+#if PICO_RP2350 || PICO_RP2040
 #include "pico2_uart_rx.pio.h"
 #include "pico/stdlib.h"
 #include "hardware/pio.h"
@@ -10,7 +10,11 @@ namespace pico2_uart_rx {
 namespace {
 constexpr uint kRxPin = 17;
 constexpr uint32_t kBaud = 115200;
+#if PICO_RP2350
 PIO port = pio2;
+#else
+PIO port = pio1;  // RP2040 has no PIO2
+#endif
 uint sm = 0;
 Receiver consumer = nullptr;
 void on_rx_irq() {
