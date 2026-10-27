@@ -4,9 +4,11 @@
 #include <stdint.h>
 #include "esc_serial_protocol.hpp"
 
-// RP2040: original GPIO5 UART1 telemetry behavior unchanged.
-// RP2350: GP17 PIO UART accepts only DShot-requested ESC TX-pad frames.
-// RP2350 ESC detection does NOT require DShot-line eRPM. Diagnostic only.
+// Both Pico/RP2040 and Pico 2/RP2350 share GP17 dedicated PIO UART.
+// Dedicated TX-pad packets are accepted only after a DShot telemetry request;
+// source identification is independent of bidirectional-DShot eRPM.
+// FC_SHARED_ESC_UART uses the same request-driven path for both chips.
+#define FC_SHARED_ESC_UART 1
 namespace esc_serial {
 constexpr bool kEnabled = true;
 constexpr uint32_t kBaud = 115200;
@@ -14,15 +16,9 @@ constexpr uint32_t kRequestSpacingUs = 40000u;
 constexpr uint32_t kResponseTimeoutUs = 8000u;
 constexpr uint32_t kPassiveHoldUs = 250000u;
 constexpr uint32_t kFreshUs = 500000u;
-#if PICO_RP2350
-constexpr unsigned kRxGpio = 17; // independent GP17 PIO2 UART RX
-constexpr bool kProbeWithoutBidir = true; // request TX-pad data via DShot flag
-constexpr int kFixedUartSourceMotor = -1; // unused by Pico2 request-only path
-#else
-constexpr unsigned kRxGpio = 5;
-constexpr bool kProbeWithoutBidir = false;
+constexpr unsigned kRxGpio = 17; // independent GP17 PIO RX on either chip
+constexpr bool kProbeWithoutBidir = true;
 constexpr int kFixedUartSourceMotor = -1;
-#endif
 
 struct MotorSnapshot {
     esc_serial_protocol::Reading reading{};
@@ -40,7 +36,7 @@ struct MotorSnapshot {
 
 struct Snapshot {
     MotorSnapshot motors[4]{};
-    uint32_t stray_bytes = 0; // Pico2: bytes outside request window
+    uint32_t stray_bytes = 0; // bytes outside request window on both boards
     uint32_t bytes_total = 0;
     uint32_t bad_crc_windows = 0; // Sliding 10-byte windows, NOT failed replies
     uint32_t bad_range_frames = 0;
