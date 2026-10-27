@@ -4,9 +4,9 @@
 #include <stdint.h>
 #include "esc_serial_protocol.hpp"
 
-// ESC TX/GPIO5 is read-only diagnostic data, never flight-control feedback.
-// The single detected ESC can be identified via bidirectional DShot, so
-// unsolicited/autonomous KISS serial packets may also be safely attributed.
+// RP2040: original GPIO5 UART1 telemetry behavior unchanged.
+// RP2350: GP17 PIO UART accepts only DShot-requested ESC TX-pad frames.
+// RP2350 ESC detection does NOT require DShot-line eRPM. Diagnostic only.
 namespace esc_serial {
 constexpr bool kEnabled = true;
 constexpr uint32_t kBaud = 115200;
@@ -14,7 +14,15 @@ constexpr uint32_t kRequestSpacingUs = 40000u;
 constexpr uint32_t kResponseTimeoutUs = 8000u;
 constexpr uint32_t kPassiveHoldUs = 250000u;
 constexpr uint32_t kFreshUs = 500000u;
+#if PICO_RP2350
+constexpr unsigned kRxGpio = 17; // independent GP17 PIO2 UART RX
+constexpr bool kProbeWithoutBidir = true; // request TX-pad data via DShot flag
+constexpr int kFixedUartSourceMotor = -1; // unused by Pico2 request-only path
+#else
 constexpr unsigned kRxGpio = 5;
+constexpr bool kProbeWithoutBidir = false;
+constexpr int kFixedUartSourceMotor = -1;
+#endif
 
 struct MotorSnapshot {
     esc_serial_protocol::Reading reading{};
@@ -32,7 +40,7 @@ struct MotorSnapshot {
 
 struct Snapshot {
     MotorSnapshot motors[4]{};
-    uint32_t stray_bytes = 0; // UART bytes while no DShot-detected ESC
+    uint32_t stray_bytes = 0; // Pico2: bytes outside request window
     uint32_t bytes_total = 0;
     uint32_t bad_crc_windows = 0; // Sliding 10-byte windows, NOT failed replies
     uint32_t bad_range_frames = 0;

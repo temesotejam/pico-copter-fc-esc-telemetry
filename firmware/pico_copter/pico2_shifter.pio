@@ -1,0 +1,36 @@
+;
+; RP2350, SN74LVC245A: GP16=DIR (IC pin 1), GP18=/OE (IC pin 19).
+; GP16 and GP18 are NOT adjacent: SET controls DIR and side-set controls /OE.
+; DIR=1: Pico A -> ESC B; DIR=0: ESC B -> Pico A.
+; /OE=1: outputs disabled (Hi-Z); /OE=0: enabled.
+; Single PIO SM synchronized to all six DShot SMs.
+; Mandatory: external 3.3V pull-up on /OE; scope-check timing before ESC tests.
+.program pico2_shifter
+.side_set 1
+.wrap_target
+    set pins, 1 side 1        ; select transmit direction; disabled
+    nop side 1 [15]
+    set pins, 1 side 0        ; enable A->B for DShot frame
+    set x, 31 side 0
+tx_wait:
+    nop side 0 [15]
+    jmp x-- tx_wait side 0 [3] ; 20 cycles per iteration, unchanged
+    nop side 0 [15]
+    nop side 0               ; 17-cycle post-TX delay, unchanged
+    set pins, 1 side 1        ; disable BEFORE switching direction
+    nop side 1 [15]
+    set pins, 0 side 1        ; select B->A, still disabled
+    nop side 1 [15]
+    set pins, 0 side 0        ; enable receiving path
+    set x, 31 side 0
+rx_window:
+    nop side 0 [15]
+    nop side 0 [15]
+    nop side 0 [15]
+    nop side 0 [15]
+    nop side 0 [15]
+    nop side 0 [15]
+    jmp x-- rx_window side 0 ; 97 cycles per iteration, unchanged
+    set pins, 0 side 1        ; disable until next 400Hz frame
+    pull block side 1        ; stall until next synchronized restart
+.wrap
