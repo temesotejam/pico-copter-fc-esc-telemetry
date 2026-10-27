@@ -32,8 +32,8 @@ int main(void)
   //Initialize synchronized RAM flight recorder before enabling 400 Hz IRQ.
   flight_log_init();
 
-  // Pico/RP2040: UART1 GP5. Pico2/RP2350: independent PIO2 UART GP17.
-  // Neither reception path is flight-control feedback.
+  // Both Pico/RP2040 and Pico 2/RP2350: independent GP17 PIO UART.
+  // Not used as flight-control feedback.
   esc_serial::init();
 
   //Initialize PWM

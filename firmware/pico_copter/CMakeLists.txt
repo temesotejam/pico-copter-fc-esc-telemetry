@@ -68,11 +68,15 @@ if(NOT EXISTS "${EIGEN3_INCLUDE_DIR}/Eigen/Dense")
     message(FATAL_ERROR "Eigen/Dense was not found at ${EIGEN3_INCLUDE_DIR}")
 endif()
 
-# Pico 2 uses a dedicated 6-line level-shifter-aware driver; RP2040 is unchanged.
+# The RP2040 and RP2350 use the SAME GP16/17/18 external circuit.
+# RP2040: 4 motor PIO0 SMs, PIO1 for GP17 UART and GP16/18 control.
+# RP2350: 6 motor SMs on PIO0/1, PIO2 for UART and direction control.
 if(PICO_BOARD STREQUAL "pico2")
     set(FC_MOTOR_DRIVER pwm_pico2.cpp)
+elseif(PICO_BOARD STREQUAL "pico")
+    set(FC_MOTOR_DRIVER pwm_pico_rp2040.cpp)
 else()
-    set(FC_MOTOR_DRIVER pwm.cpp)
+    message(FATAL_ERROR "This board design supports PICO_BOARD=pico or pico2 only")
 endif()
 
 add_executable(pico_copter
@@ -109,13 +113,14 @@ target_link_libraries(pico_copter PRIVATE
     pico_multicore
 )
 
+# Shared GP17 PIO UART: PIO1 on RP2040; PIO2 on RP2350.
+target_sources(pico_copter PRIVATE pico2_uart_rx.cpp)
+pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/pico2_uart_rx.pio)
+pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/dshot_tx_pico2.pio)
 if(PICO_BOARD STREQUAL "pico2")
-    target_sources(pico_copter PRIVATE pico2_uart_rx.cpp)
-    pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/dshot_tx_pico2.pio)
     pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/pico2_shifter.pio)
-    pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/pico2_uart_rx.pio)
 else()
-    pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/dshot_tx.pio)
+    pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/pico_shifter_rp2040.pio)
 endif()
 pico_generate_pio_header(pico_copter ${CMAKE_CURRENT_LIST_DIR}/dshot_oneway.pio)
 
