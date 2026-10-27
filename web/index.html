@@ -10,17 +10,17 @@
 <body>
   <main class="container">
     <header>
-      <p class="eyebrow">Raspberry Pi Pico / Pico 2</p>
-      <h1>Pico Copter UF2 Builder</h1>
-      <p>送信方式（双方向・単方向）と通信速度はファームウェア内の dshot_config.hpp で設定します。このページではビルド済みUF2と適用された設定を表示します。</p>
+      <p class="eyebrow">共通GP16（DIR）/ GP17（UART）/ GP18（/OE）基板</p>
+      <h1>Pico Copter 双方向DShot300 ファームウェア</h1>
+      <p>同じSN74LVC245A配線のPicoとPico 2向けに個別UF2を配布します。Pico 2は2026年10月27日に通信実機確認済み、初代Picoの共通回路版は波形検証前の試験用です。</p>
     </header>
 
     <section class="card">
       <h2>最新ビルド</h2>
       <p><label for="board-choice">対象の基板：</label>
         <select id="board-choice" aria-label="UF2の対象基板">
-          <option value="pico" selected>Raspberry Pi Pico（RP2040）</option>
-          <option value="pico2">Raspberry Pi Pico 2（RP2350）</option>
+          <option value="pico">Raspberry Pi Pico（RP2040）— 同回路版は未検証</option>
+          <option value="pico2" selected>Raspberry Pi Pico 2（RP2350）— 通信実機確認済み</option>
         </select></p>
       <p id="status">ビルド情報を取得しています…</p>
       <p id="description" class="muted"></p>
@@ -60,7 +60,7 @@
     </section>
 
     <section class="card">
-      <h2>書き込み（Pico）</h2>
+      <h2>書き込み（Pico / Pico 2）</h2>
       <ol>
         <li>使用する基板（Pico / Pico 2）を選び、対応するUF2をダウンロードします。</li>
         <li>基板の<code>BOOTSEL</code>を押したままUSB接続します。</li>
