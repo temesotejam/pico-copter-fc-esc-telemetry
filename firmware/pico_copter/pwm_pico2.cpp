@@ -2,7 +2,7 @@
  * RP2350-only motor driver. Original RP2040 pwm.cpp is selected unchanged.
  * Six physical DShot channels: GP15/14/3/2/20/21; only first FOUR are
  * mixed by existing flight code. GP20/21 send STOP (DShot 0) continuously.
- * SN74LVC245A A-side=Pico2, B-side=ESC, DIR=GP18, /OE=GP19.
+ * SN74LVC245A A-side=Pico2, B-side=ESC, DIR=GP16 (pin 1), /OE=GP18 (pin 19).
  */
 #include "pwm.hpp"
 #include "dshot_protocol.hpp"
@@ -29,8 +29,8 @@ constexpr uint16_t kWrap = 3124;
 constexpr uint32_t kControlHz = 400;
 constexpr unsigned kChannels = 6;
 constexpr unsigned kControlled = 4;
-constexpr uint kDirGpio = 18; // 1 => Pico A to ESC B
-constexpr uint kOeGpio = 19;  // 1 => Hi-Z
+constexpr uint kDirGpio = 16; // IC pin 1; 1 => Pico A to ESC B
+constexpr uint kOeGpio = 18;  // IC pin 19; 1 => Hi-Z
 constexpr uint kPins[kChannels] = {15, 14, 3, 2, 20, 21};
 PIO motor_port(unsigned i) { return i < 4 ? pio0 : pio1; }
 uint sm[kChannels]{};
@@ -115,14 +115,20 @@ void initialize_direction_sm() {
     ctrl_offset = pio_add_program(pio2, &pico2_shifter_program);
     ctrl_sm = pio_claim_unused_sm(pio2, true);
     pio_sm_config cfg = pico2_shifter_program_get_default_config(ctrl_offset);
-    sm_config_set_set_pins(&cfg, kDirGpio, 2);
+    // Nonadjacent pins: SET drives GP16/DIR, side-set drives GP18,/OE.
+    sm_config_set_set_pins(&cfg, kDirGpio, 1);
+    sm_config_set_sideset_pins(&cfg, kOeGpio);
     sm_config_set_clkdiv(&cfg, static_cast<float>(clock_get_hz(clk_sys)) /
                                     static_cast<float>(dshot::kPioClockHz));
     pio_gpio_init(pio2, kDirGpio);
     pio_gpio_init(pio2, kOeGpio);
     pio_sm_init(pio2, ctrl_sm, ctrl_offset, &cfg);
-    pio_sm_set_pins(pio2, ctrl_sm, 3u); // DIR=1, /OE=1
-    pio_sm_set_consecutive_pindirs(pio2, ctrl_sm, kDirGpio, 2, true);
+    // Initialize both nonadjacent pins HIGH while the SM is disabled.
+    pio_sm_set_pins_with_mask(pio2, ctrl_sm,
+        (1u << kDirGpio) | (1u << kOeGpio),
+        (1u << kDirGpio) | (1u << kOeGpio));
+    pio_sm_set_consecutive_pindirs(pio2, ctrl_sm, kDirGpio, 1, true);
+    pio_sm_set_consecutive_pindirs(pio2, ctrl_sm, kOeGpio, 1, true);
 }
 void collect() {
     const uint32_t now = time_us_32();
