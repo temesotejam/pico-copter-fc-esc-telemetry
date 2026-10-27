@@ -362,16 +362,15 @@ build.log
 4. コピー後、Picoが自動的に再起動する
 
 
-### Pico 2: request-driven ESC TX telemetry (no bidirectional DShot required)
+### Pico 2: bidirectional DShot300 and request-driven ESC TX telemetry
 
 The target ESC sends a dedicated TX-pad KISS UART reply when the DShot
 telemetry-request bit is set. Pico 2 therefore uses **request-only**
-telemetry: the default one-way DShot300 sends requests to one active motor
+telemetry: the default bidirectional DShot300 sends requests to one active motor
 (FR/FL/RR/RL) at a time, at least 40 ms apart. Only a complete reply
 received within the 8 ms request window may be assigned to that motor.
 Two consistent CRC-valid replies are needed before the UART data is shown
-as fresh and the ESC is marked detected. RP2350 does not use bidirectional
-DShot eRPM for this presence decision. The RP2040 path stays unchanged.
+as fresh and the ESC is marked detected. RP2350 still does not require bidirectional DShot eRPM for UART telemetry source identification; eRPM replies are diagnosed separately. The RP2040 path stays unchanged.
 
 GP17 receives the UART TX-pad signal through its own protected input; it
 does not pass through the common DIR/OE-controlled SN74LVC245A. GPIO20/21
